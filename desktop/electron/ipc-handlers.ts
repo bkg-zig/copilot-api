@@ -1,6 +1,21 @@
-import fs from 'node:fs/promises'
+import {
+  upsertConfiguredApiKey,
+  removeConfiguredApiKey,
+} from '../../src/lib/config-store'
+import path from 'node:path'
 
-import { ipcMain, shell, BrowserWindow, dialog, nativeImage } from 'electron'
+import {
+  app,
+  ipcMain,
+  shell,
+  BrowserWindow,
+  dialog,
+  nativeImage,
+} from 'electron'
+import {
+  createClientIntegrations,
+  clientIntegrationReply,
+} from './client-integrations'
 
 import {
   createMediaStudioClient,
@@ -15,7 +30,6 @@ import type {
   VideoCreationInput,
 } from '../src/types/media'
 
-import { normalizeApiKeys } from '../../src/lib/request-auth'
 import { CodexOAuthError } from '../../src/lib/oauth/codex'
 import { XaiOAuthError, type XaiAuthInfo } from '../../src/lib/oauth/xai'
 import { createOAuthLoginFlow } from './oauth-login'
@@ -25,13 +39,13 @@ import {
   removeXaiAccount,
 } from '../../src/lib/xai-token'
 import { loadModelsDevProviderOptions } from '../../src/lib/models-dev-cache'
-import { PATHS } from '../../src/lib/paths'
 import { invalidateConfigCache } from '../../src/lib/config-store'
 import { loadProviderModelOptions } from './provider-model-options'
 import { saveProviderManagementConfig } from '../../src/lib/provider-management'
 import { getDesktopProviderManagementConfig } from './provider-management'
 import {
   isValidServerHost,
+  buildServerBaseUrl,
   resolveEffectiveServerHost,
 } from '../src/lib/server-url'
 import {
@@ -78,6 +92,7 @@ import { shouldRestartServerForSettings } from './settings-runtime'
 import { detectBunRuntime } from './bun-runtime'
 import {
   readServerKeysConfig,
+  readManagedApiKeys,
   writeServerKeysConfig,
 } from './server-auth-config'
 import type {
@@ -91,6 +106,7 @@ import type {
   ProviderAuthInput,
   ServerAuthInfo,
   ServerKeysConfigUpdate,
+  GatewayApiKeyConfig,
   SubscriptionProvider,
   SubscriptionUsage,
 } from '../src/types/ipc'
@@ -118,30 +134,12 @@ interface IpcHandlersOptions {
   onQuit?: () => void | Promise<void>
 }
 
-function normalizeApiKey(apiKey: unknown): string | null {
-  if (typeof apiKey !== 'string') {
-    return null
-  }
-
-  const normalizedApiKey = apiKey.trim()
-  return normalizedApiKey || null
-}
-
 async function getServerAuthInfo(
   scope: ServerAuthScope = 'default',
 ): Promise<ServerAuthInfo> {
   try {
-    const raw = await fs.readFile(PATHS.CONFIG_PATH, 'utf8')
-    const parsed =
-      raw.trim() ?
-        (JSON.parse(raw) as {
-          auth?: { apiKeys?: unknown; adminApiKey?: unknown }
-        })
-      : {}
-    const apiKey =
-      scope === 'admin' ?
-        normalizeApiKey(parsed.auth?.adminApiKey)
-      : (normalizeApiKeys(parsed.auth?.apiKeys)[0] ?? null)
+    const { adminApiKey, apiKeys } = await readServerKeysConfig()
+    const apiKey = scope === 'admin' ? adminApiKey : apiKeys[0]
 
     if (!apiKey) {
       return { enabled: false }
@@ -274,6 +272,47 @@ export function registerIpcHandlers(
   mainWindow: BrowserWindow,
   options: IpcHandlersOptions = {},
 ): void {
+  let clientIntegrations:
+    ReturnType<typeof createClientIntegrations> | undefined
+  const clients = () =>
+    (clientIntegrations ??= createClientIntegrations({
+      dataDir: path.join(app.getPath('userData'), 'client-integrations'),
+      resourceDir:
+        app.isPackaged ?
+          path.join(process.resourcesPath, 'client-plugins')
+        : path.resolve(app.getAppPath(), '..'),
+      getGateway: async () => {
+        const settings = await readSettings()
+        const keys = await readServerKeysConfig()
+        return {
+          baseUrl: buildServerBaseUrl(
+            isRunning() ? getHost() : settings.host,
+            isRunning() ? getPort() : settings.lastPort,
+          ),
+          apiKeys: keys.apiKeys,
+        }
+      },
+    }))
+  ipcMain.handle('clients:get-state', (_event, agent: unknown) =>
+    clientIntegrationReply(() => clients().getState(agent)),
+  )
+  ipcMain.handle('clients:get-models', (_event, client: unknown) =>
+    clientIntegrationReply(() => clients().getModels(client)),
+  )
+  ipcMain.handle('clients:setup', (_event, input: unknown) =>
+    clientIntegrationReply(() => clients().setup(input)),
+  )
+  ipcMain.handle(
+    'clients:restore',
+    (_event, client: unknown, revision: unknown) =>
+      clientIntegrationReply(() => clients().restore(client, revision)),
+  )
+  ipcMain.handle('clients:open-config', (_event, client: unknown) =>
+    clientIntegrationReply(async () => {
+      const error = await shell.openPath(clients().openPath(client))
+      if (error) throw new Error('operationFailed')
+    }),
+  )
   const mediaClient = createMediaStudioClient({
     getBaseUrl: () => {
       if (!isRunning())
@@ -666,6 +705,27 @@ export function registerIpcHandlers(
     },
   )
 
+  ipcMain.handle('auth:get-managed-api-keys', () => readManagedApiKeys())
+  ipcMain.handle(
+    'auth:save-managed-api-key',
+    async (_event, key: GatewayApiKeyConfig) => {
+      await saveAndRefreshConfig(() => upsertConfiguredApiKey(key))
+      return readManagedApiKeys()
+    },
+  )
+  ipcMain.handle('auth:remove-managed-api-key', async (_event, id: string) => {
+    await saveAndRefreshConfig(() => removeConfiguredApiKey(id))
+    return readManagedApiKeys()
+  })
+  ipcMain.handle('auth:get-api-key-quota-usage', async () => {
+    if (!isRunning()) return null
+    const response = await fetch(getServerBaseUrl() + '/admin/api-keys/usage', {
+      headers: await getServerRequestHeaders('admin'),
+      signal: AbortSignal.timeout(5000),
+    })
+    if (!response.ok) throw new Error('Failed to load API key quotas')
+    return (await response.json()) as unknown
+  })
   ipcMain.handle('auth:get-server-keys', () => readServerKeysConfig())
   ipcMain.handle(
     'auth:save-server-keys',
@@ -692,12 +752,15 @@ export function registerIpcHandlers(
       ) {
         throw new Error('Unsupported subscription provider')
       }
-      const headers = await getServerRequestHeaders()
-      const response = await fetch(`${getServerBaseUrl()}/usage/${provider}`, {
-        headers,
-        // Allow for a credential refresh before the bounded upstream query.
-        signal: AbortSignal.timeout(60_000),
-      })
+      const headers = await getServerRequestHeaders('admin')
+      const response = await fetch(
+        `${getServerBaseUrl()}/admin/usage/${provider}`,
+        {
+          headers,
+          // Allow for a credential refresh before the bounded upstream query.
+          signal: AbortSignal.timeout(60_000),
+        },
+      )
       if (response.status === 404) return null
       if (!response.ok) throw new Error('Failed to fetch subscription usage')
       return (await response.json()) as SubscriptionUsage
@@ -707,8 +770,8 @@ export function registerIpcHandlers(
   ipcMain.handle('server:fetch-usage', async () => {
     const baseUrl = getServerBaseUrl()
     try {
-      const headers = await getServerRequestHeaders()
-      const res = await fetch(`${baseUrl}/usage`, {
+      const headers = await getServerRequestHeaders('admin')
+      const res = await fetch(`${baseUrl}/admin/usage`, {
         headers,
         signal: AbortSignal.timeout(5000),
       })
@@ -743,35 +806,39 @@ export function registerIpcHandlers(
     'lifetime',
   ])
 
-  ipcMain.handle('server:fetch-token-usage', async (_event, period: string) => {
-    const baseUrl = getServerBaseUrl()
-    const normalizedPeriod = TOKEN_USAGE_PERIODS.has(period) ? period : 'today'
-    try {
-      const headers = await getServerRequestHeaders()
-      const res = await fetch(
-        `${baseUrl}/token-usage?period=${normalizedPeriod}`,
-        {
-          headers,
-          signal: AbortSignal.timeout(5000),
-        },
-      )
-      if (!res.ok) return null
-      return (await res.json()) as unknown
-    } catch {
-      return null
-    }
-  })
-
   ipcMain.handle(
-    'server:fetch-token-usage-daily',
-    async (_event, period: string) => {
+    'server:fetch-token-usage',
+    async (_event, period: string, apiKeyId?: string) => {
       const baseUrl = getServerBaseUrl()
       const normalizedPeriod =
         TOKEN_USAGE_PERIODS.has(period) ? period : 'today'
       try {
-        const headers = await getServerRequestHeaders()
+        const headers = await getServerRequestHeaders('admin')
         const res = await fetch(
-          `${baseUrl}/token-usage/daily?period=${normalizedPeriod}`,
+          `${baseUrl}/admin/token-usage?period=${normalizedPeriod}${apiKeyId ? '&api_key_id=' + encodeURIComponent(apiKeyId) : ''}`,
+          {
+            headers,
+            signal: AbortSignal.timeout(5000),
+          },
+        )
+        if (!res.ok) return null
+        return (await res.json()) as unknown
+      } catch {
+        return null
+      }
+    },
+  )
+
+  ipcMain.handle(
+    'server:fetch-token-usage-daily',
+    async (_event, period: string, apiKeyId?: string) => {
+      const baseUrl = getServerBaseUrl()
+      const normalizedPeriod =
+        TOKEN_USAGE_PERIODS.has(period) ? period : 'today'
+      try {
+        const headers = await getServerRequestHeaders('admin')
+        const res = await fetch(
+          `${baseUrl}/admin/token-usage/daily?period=${normalizedPeriod}${apiKeyId ? '&api_key_id=' + encodeURIComponent(apiKeyId) : ''}`,
           {
             headers,
             signal: AbortSignal.timeout(5000),
@@ -787,7 +854,13 @@ export function registerIpcHandlers(
 
   ipcMain.handle(
     'server:fetch-token-usage-events',
-    async (_event, period: string, page: number, pageSize: number) => {
+    async (
+      _event,
+      period: string,
+      page: number,
+      pageSize: number,
+      apiKeyId?: string,
+    ) => {
       const baseUrl = getServerBaseUrl()
       const normalizedPeriod =
         TOKEN_USAGE_PERIODS.has(period) ? period : 'today'
@@ -800,10 +873,11 @@ export function registerIpcHandlers(
         page_size: String(normalizedPageSize),
         period: normalizedPeriod,
       })
+      if (apiKeyId) params.set('api_key_id', apiKeyId)
       try {
-        const headers = await getServerRequestHeaders()
+        const headers = await getServerRequestHeaders('admin')
         const res = await fetch(
-          `${baseUrl}/token-usage/events?${params.toString()}`,
+          `${baseUrl}/admin/token-usage/events?${params.toString()}`,
           {
             headers,
             signal: AbortSignal.timeout(5000),
@@ -819,7 +893,13 @@ export function registerIpcHandlers(
 
   ipcMain.handle(
     'server:fetch-token-usage-sessions',
-    async (_event, period: string, page: number, pageSize: number) => {
+    async (
+      _event,
+      period: string,
+      page: number,
+      pageSize: number,
+      apiKeyId?: string,
+    ) => {
       const baseUrl = getServerBaseUrl()
       const normalizedPeriod =
         TOKEN_USAGE_PERIODS.has(period) ? period : 'today'
@@ -832,10 +912,11 @@ export function registerIpcHandlers(
         page_size: String(normalizedPageSize),
         period: normalizedPeriod,
       })
+      if (apiKeyId) params.set('api_key_id', apiKeyId)
       try {
-        const headers = await getServerRequestHeaders()
+        const headers = await getServerRequestHeaders('admin')
         const res = await fetch(
-          `${baseUrl}/token-usage/sessions?${params.toString()}`,
+          `${baseUrl}/admin/token-usage/sessions?${params.toString()}`,
           {
             headers,
             signal: AbortSignal.timeout(5000),

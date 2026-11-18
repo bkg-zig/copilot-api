@@ -31,6 +31,7 @@ import type {
 type IpcHandler = (event: unknown, ...parameters: unknown[]) => unknown
 const handlers = new Map<string, IpcHandler>()
 const openExternal = mock(() => Promise.resolve())
+const openPath = mock(() => Promise.resolve(''))
 let saveDialogResult: { canceled: boolean; filePath?: string } = {
   canceled: true,
 }
@@ -82,7 +83,7 @@ await mock.module('electron', () => ({
       handlers.set(channel, handler),
     on: () => {},
   },
-  shell: { openExternal },
+  shell: { openExternal, openPath },
   dialog: { showSaveDialog },
   BrowserWindow: class {},
   nativeImage: {
@@ -135,6 +136,7 @@ async function invoke(
 beforeEach(async () => {
   handlers.clear()
   openExternal.mockClear()
+  openPath.mockClear()
   showSaveDialog.mockClear()
   saveDialogResult = { canceled: true }
   rendererListeners.clear()
@@ -271,9 +273,7 @@ describe('desktop provider management IPC', () => {
 
 describe('desktop model discovery IPC', () => {
   test('requests image models for the Dashboard with gateway auth and preserves the catalog', async () => {
-    spyOn(fs.promises, 'readFile').mockResolvedValue(
-      JSON.stringify({ auth: { apiKeys: ['models-key'] } }),
-    )
+    keys.apiKeys = ['models-key']
     const catalog = {
       object: 'list',
       data: [
@@ -292,14 +292,19 @@ describe('desktop model discovery IPC', () => {
       }),
     )
     expect(fetcher.mock.calls.at(-1)?.[1]?.signal).toBeInstanceOf(AbortSignal)
+
+    keys.apiKeys = ['rotated-key']
+    fetcher.mockResolvedValueOnce(Response.json(catalog))
+    expect(await invoke('server:fetch-models')).toEqual(catalog)
+    expect(fetcher.mock.calls.at(-1)?.[1]?.headers).toEqual({
+      'x-api-key': 'rotated-key',
+    })
   })
 })
 
 describe('desktop subscription quota IPC', () => {
-  test('requests CLI server quotas with gateway auth', async () => {
-    spyOn(fs.promises, 'readFile').mockResolvedValue(
-      JSON.stringify({ auth: { apiKeys: ['quota-key'] } }),
-    )
+  test('requests server quotas with admin auth', async () => {
+    keys.adminApiKey = 'quota-admin-key'
     const usage = {
       provider: 'codex',
       planType: 'business',
@@ -315,9 +320,9 @@ describe('desktop subscription quota IPC', () => {
       usage,
     )
     expect(fetch).toHaveBeenCalledWith(
-      'http://127.0.0.1:4141/usage/codex',
+      'http://127.0.0.1:4141/admin/usage/codex',
       expect.objectContaining({
-        headers: { 'x-api-key': 'quota-key' },
+        headers: { 'x-api-key': 'quota-admin-key' },
       }),
     )
     expect(fetcher.mock.calls[0][1]?.signal).toBeInstanceOf(AbortSignal)
@@ -325,15 +330,15 @@ describe('desktop subscription quota IPC', () => {
       usage,
     )
     expect(fetch).toHaveBeenLastCalledWith(
-      'http://127.0.0.1:4141/usage/xai',
+      'http://127.0.0.1:4141/admin/usage/xai',
       expect.anything(),
     )
     expect(
       await invoke('server:fetch-subscription-usage', 'opencode-go'),
     ).toEqual(usage)
     expect(fetch).toHaveBeenLastCalledWith(
-      'http://127.0.0.1:4141/usage/opencode-go',
-      expect.objectContaining({ headers: { 'x-api-key': 'quota-key' } }),
+      'http://127.0.0.1:4141/admin/usage/opencode-go',
+      expect.objectContaining({ headers: { 'x-api-key': 'quota-admin-key' } }),
     )
   })
 
@@ -1203,7 +1208,7 @@ describe('desktop token usage sessions', () => {
       (input: Parameters<typeof fetch>[0]) => {
         if (
           fetchInputUrl(input)
-          === 'http://127.0.0.1:4141/token-usage/sessions?page=1&page_size=5&period=this_week'
+          === 'http://127.0.0.1:4141/admin/token-usage/sessions?page=1&page_size=5&period=this_week'
         ) {
           return Promise.resolve(Response.json(payload))
         }
@@ -1221,7 +1226,7 @@ describe('desktop token usage sessions', () => {
     const fetchSessions = Object.assign(
       (input: Parameters<typeof fetch>[0]) => {
         expect(fetchInputUrl(input)).toBe(
-          'http://127.0.0.1:4141/token-usage/sessions?page=2&page_size=5&period=today',
+          'http://127.0.0.1:4141/admin/token-usage/sessions?page=2&page_size=5&period=today',
         )
         return Promise.resolve(new Response(null, { status: 500 }))
       },
@@ -1351,5 +1356,98 @@ describe('desktop configuration editor bridge', () => {
     expect(handlers.has('config:get-document')).toBe(true)
     expect(handlers.has('config:save-document')).toBe(true)
     expect(handlers.has('config:apply-document')).toBe(true)
+  })
+})
+
+describe('desktop client integration IPC', () => {
+  test('exposes client configuration and plugin operations through preload', async () => {
+    await import('../electron/preload')
+    if (!preloadApi) throw new Error('Preload bridge was not exposed')
+    await preloadApi.getClientIntegrations('claude')
+    await preloadApi.getClientModels('claude')
+    const input = {
+      client: 'claude' as const,
+      revision: 'revision',
+      apiKey: 'test-key',
+      model: 'gpt',
+      fableModel: '',
+      opusModel: '',
+      sonnetModel: '',
+      smallModel: '',
+      reviewModel: '',
+      nativeToolSearch: false,
+      agentContext: false,
+      plugins: [],
+    }
+    await preloadApi.setupClient(input)
+    await preloadApi.restoreClient('claude', 'revision')
+    await preloadApi.openClientConfig('claude')
+    const harnessInput = {
+      ...input,
+      client: 'harness' as const,
+      model: '',
+      profile: 'desktop',
+    }
+    await preloadApi.setupClient(harnessInput)
+    expect(rendererInvoke).toHaveBeenCalledWith('clients:get-state', 'claude')
+    expect(rendererInvoke).toHaveBeenCalledWith('clients:get-models', 'claude')
+    expect(rendererInvoke).toHaveBeenCalledWith('clients:setup', input)
+    expect(rendererInvoke).toHaveBeenCalledWith(
+      'clients:restore',
+      'claude',
+      'revision',
+    )
+    expect(rendererInvoke).toHaveBeenCalledWith('clients:open-config', 'claude')
+    expect(rendererInvoke).toHaveBeenCalledWith('clients:setup', harnessInput)
+  })
+  test('uses the actual running or saved gateway address and never supplies the admin key', async () => {
+    const runningState = (await invoke('clients:get-state', 'opencode')) as {
+      data: {
+        baseUrl: string
+        apiKeys: string[]
+        clients: Array<{ client: string }>
+        harnessProfiles: string[]
+      }
+    }
+    expect(runningState.data.baseUrl).toBe('http://127.0.0.1:4141')
+    expect(runningState.data.apiKeys).toEqual(['old-api'])
+    expect(runningState.data.clients.map((item) => item.client)).toEqual([
+      'opencode',
+    ])
+    expect(runningState.data.harnessProfiles).toEqual([])
+    running = false
+    settings.lastPort = 6161
+    settings.host = '0.0.0.0'
+    const stoppedState = (await invoke('clients:get-state')) as {
+      data: { baseUrl: string }
+    }
+    expect(stoppedState.data.baseUrl).toBe('http://localhost:6161')
+    expect(await invoke('clients:setup', {})).toEqual({ error: 'invalidInput' })
+    expect(await invoke('clients:get-state', 'invalid-agent')).toEqual({
+      error: 'invalidInput',
+    })
+    expect(await invoke('clients:restore', 'bad-client', '')).toHaveProperty(
+      'error',
+    )
+    expect(await invoke('clients:get-models', 'opencode')).toHaveProperty(
+      'error',
+    )
+    expect(
+      await invoke('clients:setup', {
+        client: 'harness',
+        profile: '../invalid-profile',
+      }),
+    ).toHaveProperty('error')
+    expect(await invoke('clients:open-config', 'bad-client')).toHaveProperty(
+      'error',
+    )
+    expect(await invoke('clients:open-config', 'claude')).toEqual({
+      data: undefined,
+    })
+    expect(openPath).toHaveBeenCalledTimes(1)
+    openPath.mockResolvedValueOnce('could not open')
+    expect(await invoke('clients:open-config', 'claude')).toEqual({
+      error: 'operationFailed',
+    })
   })
 })

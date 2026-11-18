@@ -148,7 +148,7 @@ export async function runServer(options: RunServerOptions): Promise<void> {
 
   consola.options.throttle = 0
 
-  mergeConfigWithDefaults()
+  const config = mergeConfigWithDefaults()
 
   const configuredApiKeys = getConfiguredApiKeys()
   const binding = resolveServerBinding(
@@ -223,8 +223,23 @@ export async function runServer(options: RunServerOptions): Promise<void> {
     allowedOrigins,
   })
 
-  const { startTokenUsageRetention } = await import("./lib/token-usage/store")
+  const {
+    initializeApiKeyQuotas,
+    startTokenUsageRetention,
+    startVideoUsageSettlement,
+  } = await import("./lib/token-usage/store")
+  const { settlePendingVideoUsage } = await import(
+    "./services/xai/video-usage-settlement"
+  )
   await startTokenUsageRetention()
+  if (config.auth?.apiKeyConfigs?.some((key) => key.quota)) {
+    try {
+      await initializeApiKeyQuotas()
+    } catch (error) {
+      consola.warn("Failed to load API key quotas", error)
+    }
+  }
+  startVideoUsageSettlement(settlePendingVideoUsage)
 
   serve({
     fetch: server.fetch as ServerHandler,

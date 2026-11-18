@@ -59,6 +59,7 @@ import {
   normalizeGuardianAgentMessages,
   normalizeInputImageDetails,
   normalizeResponsesReasoningEffort,
+  replayMessagesCompactionForResponses,
   sanitizeOversizedInputImages,
   sanitizeUnsupportedInputFields,
 } from "./utils"
@@ -271,6 +272,7 @@ const dispatchResponses = async (
   if (shouldCompactInput) {
     compactInputByLatestCompaction(payload)
   }
+  replayMessagesCompactionForResponses(payload)
 
   debugJson(logger, "Translated Responses payload:", payload)
 

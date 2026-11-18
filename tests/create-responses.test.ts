@@ -3,7 +3,7 @@ import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
 
-import type { ResponsesPayload, ResponsesResult } from "~/lib/types/responses"
+import type { ResponsesPayload } from "~/lib/types/responses"
 
 import {
   copilotHeaders,
@@ -15,6 +15,7 @@ import { COMPACT_REQUEST } from "~/lib/compact"
 import { getConfig, invalidateConfigCache } from "~/lib/config"
 import { PATHS } from "~/lib/paths"
 import { state } from "~/lib/state"
+import { translateAnthropicMessagesToResponsesPayload } from "~/routes/messages/responses-translation"
 import {
   buildResponsesWebSocketPoolKey,
   buildResponsesWebSocketPayload,
@@ -22,6 +23,8 @@ import {
   createResponses,
   prepareResponsesWebSocketRequest,
 } from "~/services/copilot/create-responses"
+
+import { createResponsesResult } from "./fixtures/responses"
 
 const originalFetch = globalThis.fetch
 const originalOauthApp = process.env.COPILOT_API_OAUTH_APP
@@ -35,26 +38,6 @@ const originalState = {
   vsCodeSessionId: state.vsCodeSessionId,
   vsCodeVersion: state.vsCodeVersion,
 }
-
-const createResponsesResult = (model: string): ResponsesResult => ({
-  created_at: 0,
-  error: null,
-  id: "resp-test",
-  incomplete_details: null,
-  instructions: null,
-  metadata: null,
-  model,
-  object: "response",
-  output: [],
-  output_text: "",
-  parallel_tool_calls: false,
-  status: "completed",
-  temperature: null,
-  tool_choice: "auto",
-  tools: [],
-  top_p: null,
-  usage: null,
-})
 
 const fetchMock = mock((_url: string | URL | Request, _init?: RequestInit) =>
   Promise.resolve(
@@ -132,7 +115,57 @@ describe("createResponses", () => {
     >
     expect(body.initiator).toBeUndefined()
     expect(body.type).toBeUndefined()
+    expect(body).not.toHaveProperty("max_output_tokens")
   })
+
+  test("raises the one-token Messages model probe to the Copilot minimum", async () => {
+    const payload = translateAnthropicMessagesToResponsesPayload({
+      model: "gpt-6-astra",
+      max_tokens: 1,
+      stream: false,
+      messages: [{ role: "user", content: "Hi" }],
+    })
+
+    await createResponses(payload, {
+      initiator: "user",
+      requestId: "request-model-probe",
+      vision: false,
+    })
+
+    const [, init] = fetchMock.mock.calls[0]
+    const body = JSON.parse(init?.body as string) as ResponsesPayload
+    expect(body.max_output_tokens).toBe(16)
+    expect(payload.max_output_tokens).toBe(1)
+  })
+
+  test.each([
+    { maxOutputTokens: 15, expected: 16 },
+    { maxOutputTokens: 16, expected: 16 },
+    { maxOutputTokens: 64, expected: 64 },
+    { maxOutputTokens: null, expected: null },
+    { maxOutputTokens: 0, expected: 0 },
+    { maxOutputTokens: -1, expected: -1 },
+    { maxOutputTokens: 1.5, expected: 1.5 },
+  ])(
+    "sends the expected Copilot HTTP limit for max_output_tokens %j",
+    async ({ maxOutputTokens, expected }) => {
+      const payload: ResponsesPayload = {
+        input: "hello",
+        model: "gpt-test",
+        max_output_tokens: maxOutputTokens,
+      }
+
+      await createResponses(payload, {
+        initiator: "user",
+        requestId: "request-output-limit",
+        vision: false,
+      })
+
+      const [, init] = fetchMock.mock.calls[0]
+      const body = JSON.parse(init?.body as string) as ResponsesPayload
+      expect(body.max_output_tokens).toBe(expected)
+    },
+  )
 
   test.each([
     { models: undefined },

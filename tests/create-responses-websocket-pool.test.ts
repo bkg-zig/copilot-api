@@ -1,9 +1,13 @@
-import { afterEach, beforeEach, expect, mock, test } from "bun:test"
+import { afterEach, beforeEach, expect, mock, spyOn, test } from "bun:test"
 import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
 
-import type { ResponsesPayload, ResponsesResult } from "~/lib/types/responses"
+import type {
+  ResponseInputItem,
+  ResponsesPayload,
+  ResponsesResult,
+} from "~/lib/types/responses"
 
 type ListenerEvent = {
   data?: unknown
@@ -211,10 +215,12 @@ await mock.module("undici", () => ({
 const { state } = await import("~/lib/state")
 const { getConfig, invalidateConfigCache } = await import("~/lib/config")
 const { PATHS } = await import("~/lib/paths")
-const { createResponses } = await import("~/services/copilot/create-responses")
+const { createResponses, COPILOT_RESPONSES_WEBSOCKET_MAX_MESSAGE_BYTES } =
+  await import("~/services/copilot/create-responses")
 const {
   createPooledWebSocketStream,
   ResponsesWebSocketInactivityTimeoutError,
+  ResponsesWebSocketMessageTooLargeError,
   ResponsesWebSocketOpenTimeoutError,
   WebSocketMessageBuffer,
 } = await import("~/services/responses-websocket")
@@ -257,6 +263,7 @@ const createResponsesResult = (
           { ...item, encrypted_content: "completed-cipher" }
         : item,
       )
+    : model === "gpt-text-continuation" ? [continuationOutput[1]]
     : [],
   output_text: "",
   parallel_tool_calls: false,
@@ -405,6 +412,28 @@ test("Responses websocket omits include when only disabled output token replay i
   ) as ResponsesPayload
   expect(sent).not.toHaveProperty("include")
   expect(payload.include).toEqual(["output.encrypted_content"])
+})
+
+test("Responses websocket raises low positive integer output limits to the Copilot minimum", async () => {
+  const payload: ResponsesPayload = {
+    input: "hello",
+    model: "gpt-6-astra",
+    max_output_tokens: 1,
+    stream: true,
+  }
+
+  const response = await createResponses(payload, {
+    initiator: "user",
+    requestId: "request-output-limit",
+    transport: "websocket",
+    vision: false,
+  })
+  await collectStreamChunks(response as AsyncIterable<unknown>)
+
+  const sent = JSON.parse(
+    MockWebSocket.instances[0]?.sent[0] ?? "",
+  ) as ResponsesPayload
+  expect(sent.max_output_tokens).toBe(16)
 })
 
 test("Responses websocket pool reuses the same connection for matching pool keys", async () => {
@@ -1114,7 +1143,10 @@ const createTestPooledStream = (
   overrides: {
     maxBufferedBytes?: number
     maxBufferedMessages?: number
+    maxMessageBytes?: number
     openTimeoutMs?: number
+    payload?: Record<string, unknown>
+    preparePayload?: () => Record<string, unknown>
     signal?: AbortSignal
     streamInactivityTimeoutMs?: number
   } = {},
@@ -1122,8 +1154,9 @@ const createTestPooledStream = (
   createPooledWebSocketStream(
     {
       headers: {},
-      payload: { model: "gpt-test" },
+      payload: overrides.payload ?? { model: "gpt-test" },
       poolKey: `test-${poolKey}`,
+      preparePayload: overrides.preparePayload,
       signal: overrides.signal,
       url: "wss://api.githubcopilot.com/responses",
     },
@@ -1136,6 +1169,7 @@ const createTestPooledStream = (
         chunk.event === "response.completed" ? "reuse" : "continue",
       maxBufferedBytes: overrides.maxBufferedBytes ?? 1024,
       maxBufferedMessages: overrides.maxBufferedMessages ?? 32,
+      maxMessageBytes: overrides.maxMessageBytes,
       openErrorMessage: "open failed",
       openTimeoutMs: overrides.openTimeoutMs ?? 100,
       poolIdleTimeoutMs: 1000,
@@ -1298,10 +1332,11 @@ const getContinuationRequestId = () =>
 const sendContinuationTurn = async (
   input: ResponsesPayload["input"],
   clientSignal = new AbortController().signal,
+  model = "gpt-continuation",
 ) =>
   collectStreamChunks(
     (await createResponses(
-      { model: "gpt-continuation", stream: true, input },
+      { model, stream: true, input },
       {
         requestId: getContinuationRequestId(),
         initiator: "user",
@@ -1311,6 +1346,34 @@ const sendContinuationTurn = async (
       },
     )) as AsyncIterable<unknown>,
   )
+
+test("Copilot websocket continues text-only answers and retries a missing ID with full input", async () => {
+  await withAffinity("text-only-continuation", async () => {
+    const history: Array<ResponseInputItem> = [...continuationInput]
+    const send = () =>
+      sendContinuationTurn(history, undefined, "gpt-text-continuation")
+    for (let turn = 0; turn < 3; turn++) {
+      await send()
+      const sent = continuationRequest(0, turn)
+      if (turn === 0) expect(sent.previous_response_id).toBeUndefined()
+      else {
+        expect(sent.previous_response_id).toBe(`resp-${turn}`)
+        expect(sent.input).toEqual(history.slice(-1))
+      }
+      history.push(continuationOutput[1], {
+        ...continuationInput[0],
+        content: `question ${turn + 1}`,
+      })
+    }
+    MockWebSocket.continuationError = { code: "previous_response_not_found" }
+    const chunks = await send()
+    expect(continuationRequest(0, 3).previous_response_id).toBe("resp-3")
+    expect(MockWebSocket.instances).toHaveLength(2)
+    expect(continuationRequest(1, 0).previous_response_id).toBeUndefined()
+    expect(continuationRequest(1, 0).input).toEqual(history)
+    expect(chunks.at(-1)?.event).toBe("response.completed")
+  })
+})
 
 test("Copilot websocket continues an existing stable pool key and isolates agents", async () => {
   await withAffinity("agent-a", async () => {
@@ -1610,6 +1673,7 @@ test.each(["acknowledgement-first", "terminal-first"] as const)(
 test.each(["rejected", "wrong-id", "timeout", "closed", "missing-id"] as const)(
   "falls back to full input when the interrupt cannot release the socket (%s)",
   async (mode) => {
+    const timeoutSpy = spyOn(globalThis, "setTimeout")
     await withAffinity(`interrupt-fallback-${mode}`, async () => {
       const { controller, socket, input, stream } =
         await startInterruptibleTurn()
@@ -1636,8 +1700,15 @@ test.each(["rejected", "wrong-id", "timeout", "closed", "missing-id"] as const)(
             response_id: "resp-other",
           }),
         )
-      if (mode === "timeout")
+      if (mode === "timeout") {
         socket.emitMessage(JSON.stringify(interruptAcknowledgement))
+        await delay(0)
+      }
+      if (mode === "timeout" || mode === "missing-id") {
+        const deadline = timeoutSpy.mock.calls.find(([, ms]) => ms === 10_000)
+        expect(deadline).toBeDefined()
+        deadline![0]()
+      }
 
       await resent
       await stream
@@ -1646,9 +1717,8 @@ test.each(["rejected", "wrong-id", "timeout", "closed", "missing-id"] as const)(
       expect(MockWebSocket.instances).toHaveLength(2)
       expect(continuationRequest(1, 0).previous_response_id).toBeUndefined()
       expect(continuationRequest(1, 0).input).toEqual(input)
-    })
+    }).finally(() => timeoutSpy.mockRestore())
   },
-  15000,
 )
 
 test("a cancelled interruption waiter releases its slot for the next request", async () => {
@@ -1742,4 +1812,123 @@ test("retries full input if the interrupted response ID is unavailable", async (
     expect(continuationRequest(1, 0).previous_response_id).toBeUndefined()
     expect(continuationRequest(1, 0).input).toEqual(full)
   })
+})
+
+test("Responses websocket rejects a message above maxMessageBytes before sending it", async () => {
+  const error = await getRejectedError(
+    collectStreamChunks(
+      createTestPooledStream("too-large", {
+        maxMessageBytes: 500,
+        payload: { model: "gpt-test", input: "x".repeat(600) },
+      }),
+    ),
+  )
+
+  expect(error).toBeInstanceOf(ResponsesWebSocketMessageTooLargeError)
+  expect(error).toMatchObject({ code: "context_length_exceeded" })
+  expect(MockWebSocket.instances[0]?.sent).toEqual([])
+})
+
+test("Responses websocket measures maxMessageBytes in UTF-8 bytes and allows an exact fit", async () => {
+  const payload = { model: "gpt-test", input: "€".repeat(400) }
+  const messageBytes = Buffer.byteLength(JSON.stringify(payload))
+  expect(messageBytes).toBeGreaterThan(1000)
+
+  const error = await getRejectedError(
+    collectStreamChunks(
+      createTestPooledStream("utf8", {
+        maxMessageBytes: messageBytes - 1,
+        payload,
+      }),
+    ),
+  )
+  expect(error).toBeInstanceOf(ResponsesWebSocketMessageTooLargeError)
+
+  await collectStreamChunks(
+    createTestPooledStream("exact-fit", {
+      maxMessageBytes: messageBytes,
+      payload,
+    }),
+  )
+  expect(MockWebSocket.instances.flatMap((socket) => socket.sent)).toEqual([
+    JSON.stringify(payload),
+  ])
+})
+
+test("Responses websocket applies maxMessageBytes to the prepared payload", async () => {
+  await collectStreamChunks(
+    createTestPooledStream("prepared", {
+      maxMessageBytes: 500,
+      payload: { model: "gpt-test", input: "x".repeat(600) },
+      preparePayload: () => ({ model: "gpt-test" }),
+    }),
+  )
+
+  expect(MockWebSocket.instances[0]?.sent).toEqual([
+    JSON.stringify({ model: "gpt-test" }),
+  ])
+})
+
+test("Copilot websocket fails fast with context_length_exceeded above 32 MiB", async () => {
+  const chunks = await collectStreamChunks(
+    (await createResponses(
+      {
+        input: "x".repeat(COPILOT_RESPONSES_WEBSOCKET_MAX_MESSAGE_BYTES),
+        model: "gpt-test",
+        stream: true,
+      },
+      {
+        initiator: "user",
+        requestId: "request-1",
+        transport: "websocket",
+        vision: false,
+      },
+    )) as AsyncIterable<unknown>,
+  )
+
+  expect(chunks).toHaveLength(1)
+  expect(chunks[0]?.event).toBe("error")
+  expect(JSON.parse(chunks[0]?.data ?? "{}")).toMatchObject({
+    code: "context_length_exceeded",
+    type: "error",
+  })
+  expect(chunks[0]?.data).toContain("exceeds the 32.0 MiB limit")
+  expect(MockWebSocket.instances.flatMap((socket) => socket.sent)).toEqual([])
+})
+
+test("Copilot websocket checks the continuation delta, not the full history, against 32 MiB", async () => {
+  const mib = 1024 * 1024
+  const firstInput = [
+    {
+      type: "message",
+      role: "user",
+      content: "x".repeat(COPILOT_RESPONSES_WEBSOCKET_MAX_MESSAGE_BYTES - mib),
+    },
+  ] as const
+  const delta = [
+    { type: "message", role: "user", content: "y".repeat(2 * mib) },
+  ] as const
+  const fullHistory = [...firstInput, ...continuationOutput, ...delta]
+
+  await withAffinity("oversized-history", async () => {
+    await sendContinuationTurn([...firstInput])
+    const chunks = await sendContinuationTurn(fullHistory)
+    expect(chunks.some((chunk) => chunk.event === "error")).toBe(false)
+  })
+
+  expect(MockWebSocket.instances).toHaveLength(1)
+  expect(continuationRequest(0, 1)).toMatchObject({
+    previous_response_id: "resp-1",
+    input: [...delta],
+  })
+
+  const cold = await withAffinity("cold-history", () =>
+    sendContinuationTurn(fullHistory),
+  )
+  expect(cold.map((chunk) => chunk.event)).toEqual(["error"])
+  expect(JSON.parse(cold[0]?.data ?? "{}")).toMatchObject({
+    code: "context_length_exceeded",
+  })
+  expect(MockWebSocket.instances).toHaveLength(2)
+  expect(MockWebSocket.instances[1]?.sent).toEqual([])
 })

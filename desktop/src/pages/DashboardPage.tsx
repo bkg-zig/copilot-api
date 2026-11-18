@@ -19,10 +19,13 @@ import {
 import { getProviderTypeLabel } from '../lib/provider-type-labels'
 import { buildServerBaseUrl } from '../lib/server-url'
 import AdvancedConfigPage from './AdvancedConfigPage'
+import ClientIntegrationsPage from './ClientIntegrationsPage'
 import MediaStudioPage from './MediaStudioPage'
 import ProviderManagementPanel from '../components/ProviderManagementPanel'
+import ApiKeyManager from '../components/ApiKeyManager'
 import type {
   DesktopAuthMode,
+  GatewayApiKeyConfig,
   ProviderManagementConfig,
   ServerAuthInfo,
   ServerStatus,
@@ -57,6 +60,8 @@ type DashboardTab =
   | 'tokenUsage'
   | 'subscriptions'
   | 'providers'
+  | 'apiKeys'
+  | 'clients'
   | 'advancedConfig'
   | 'studio'
   | 'logs'
@@ -68,6 +73,8 @@ type DashboardTab =
  */
 const TABS_WITHOUT_START_FORM: ReadonlyArray<DashboardTab> = [
   'providers',
+  'apiKeys',
+  'clients',
   'advancedConfig',
   'studio',
 ]
@@ -213,6 +220,40 @@ const IconProviders = () => (
   </svg>
 )
 
+const IconApiKeys = () => (
+  <svg
+    width="16"
+    height="16"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.8"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <circle cx="8" cy="16" r="5" />
+    <path d="m11.5 12.5 9-9M17 7l3 3m-6 0 3 3" />
+  </svg>
+)
+
+const IconClients = () => (
+  <svg
+    width="16"
+    height="16"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.8"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <path d="M10 13a5 5 0 0 0 7.07 0l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+    <path d="M14 11a5 5 0 0 0-7.07 0l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+  </svg>
+)
+
 const IconLogs = () => (
   <svg
     xmlns="http://www.w3.org/2000/svg"
@@ -344,6 +385,11 @@ export default function DashboardPage({
   const [tokenUsageSessionsPage, setTokenUsageSessionsPage] = useState(1)
   const [tokenUsagePeriod, setTokenUsagePeriod] =
     useState<TokenUsagePeriod>('today')
+  const [apiKeyFilter, setApiKeyFilter] = useState('')
+  const apiKeyFilterRef = useRef('')
+  const [managedApiKeys, setManagedApiKeys] = useState<GatewayApiKeyConfig[]>(
+    [],
+  )
   const [models, setModels] = useState<Model[]>([])
   const [providerConfig, setProviderConfig] =
     useState<ProviderManagementConfig | null>(null)
@@ -616,6 +662,9 @@ export default function DashboardPage({
     }
   }
 
+  const apiKeyFilterArgs = (): [] | [string] =>
+    apiKeyFilterRef.current ? [apiKeyFilterRef.current] : []
+
   const fetchTokenUsageEvents = async (
     period: TokenUsagePeriod,
     page: number,
@@ -628,6 +677,7 @@ export default function DashboardPage({
           period,
           page,
           TOKEN_USAGE_EVENTS_PAGE_SIZE,
+          ...apiKeyFilterArgs(),
         )
       if (
         requestId === tokenUsageEventsRequestId.current
@@ -656,12 +706,16 @@ export default function DashboardPage({
     try {
       const [tokenUsageData, tokenUsageDailyData, tokenUsageEventsData] =
         await Promise.all([
-          window.electronAPI.fetchTokenUsage(period),
-          window.electronAPI.fetchTokenUsageDaily(period),
+          window.electronAPI.fetchTokenUsage(period, ...apiKeyFilterArgs()),
+          window.electronAPI.fetchTokenUsageDaily(
+            period,
+            ...apiKeyFilterArgs(),
+          ),
           window.electronAPI.fetchTokenUsageEvents(
             period,
             page,
             TOKEN_USAGE_EVENTS_PAGE_SIZE,
+            ...apiKeyFilterArgs(),
           ),
           fetchTokenUsageSessions(period, sessionsPage),
         ])
@@ -703,6 +757,7 @@ export default function DashboardPage({
           period,
           page,
           TOKEN_USAGE_SESSIONS_PAGE_SIZE,
+          ...apiKeyFilterArgs(),
         )
       if (requestId === tokenUsageSessionsRequestId.current) {
         setTokenUsageSessions(
@@ -722,6 +777,33 @@ export default function DashboardPage({
         setTokenUsageSessionsLoading(false)
       }
     }
+  }
+
+  useEffect(() => {
+    if (tab !== 'tokenUsage') return
+    let active = true
+    void (async () => {
+      try {
+        const keys = await window.electronAPI.getManagedApiKeys()
+        if (active) setManagedApiKeys(keys)
+      } catch {
+        /* Global and unattributed views remain available. */
+      }
+    })()
+    return () => {
+      active = false
+    }
+  }, [tab])
+  const handleApiKeyFilterChange = (value: string) => {
+    apiKeyFilterRef.current = value
+    setApiKeyFilter(value)
+    setTokenUsageEventsPage(1)
+    setTokenUsageSessionsPage(1)
+    setTokenUsage(null)
+    setTokenUsageDaily(null)
+    setTokenUsageEvents(null)
+    setTokenUsageSessions(null)
+    if (started && !restarting) void fetchTokenUsageData(tokenUsagePeriod, 1, 1)
   }
 
   const handleTokenUsagePeriodChange = (nextPeriod: TokenUsagePeriod) => {
@@ -879,6 +961,8 @@ export default function DashboardPage({
       key: 'providers',
       label: t('providers.title'),
     },
+    { icon: <IconApiKeys />, key: 'apiKeys', label: t('apiKeys.title') },
+    { icon: <IconClients />, key: 'clients', label: t('clients.title') },
     { icon: <IconLaunch />, key: 'studio', label: t('studio.title') },
     {
       icon: <IconAdvancedConfig />,
@@ -1337,6 +1421,29 @@ export default function DashboardPage({
         {started && tab === 'tokenUsage' && (
           <div className="p-4">
             <TokenUsagePanel
+              keyFilterControl={
+                <label className="flex items-center gap-2 text-[13px] text-ink-soft">
+                  {t('apiKeys.keyFilter')}
+                  <select
+                    aria-label={t('apiKeys.keyFilter')}
+                    className="rounded-md border border-line bg-surface px-2 py-1 text-ink"
+                    value={apiKeyFilter}
+                    onChange={(event) =>
+                      handleApiKeyFilterChange(event.target.value)
+                    }
+                  >
+                    <option value="">{t('apiKeys.allKeys')}</option>
+                    <option value="__unattributed__">
+                      {t('apiKeys.unattributed')}
+                    </option>
+                    {managedApiKeys.map((key, index) => (
+                      <option key={key.id} value={key.id}>
+                        {key.name ?? t('clients.keyNumber', { n: index + 1 })}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              }
               dailyUsage={tokenUsageDaily}
               eventsPage={tokenUsageEvents}
               eventsLoading={tokenUsageEventsLoading}
@@ -1360,6 +1467,15 @@ export default function DashboardPage({
             onOpenAuthConfig={handleChangeAuth}
           />
         )}
+
+        {tab === 'clients' && (
+          <ClientIntegrationsPage
+            initialBaseUrl={anthropicUrl}
+            serverRunning={started && !stopping && !restarting}
+          />
+        )}
+
+        {tab === 'apiKeys' && <ApiKeyManager />}
 
         {showCreate && (tab === 'studio' || studioOpened) && (
           <div className={tab === 'studio' ? 'h-full' : 'hidden'}>
@@ -1469,6 +1585,7 @@ function TokenUsageSummaryMetrics({
 }
 
 function TokenUsagePanel({
+  keyFilterControl,
   dailyUsage,
   eventsPage,
   eventsLoading,
@@ -1483,6 +1600,7 @@ function TokenUsagePanel({
   t,
   tokenUsage,
 }: {
+  keyFilterControl?: ReactNode
   dailyUsage: TokenUsageDailySummary | null
   eventsPage: TokenUsageEventsPage | null
   eventsLoading: boolean
@@ -1535,6 +1653,7 @@ function TokenUsagePanel({
               </option>
             ))}
           </select>
+          {keyFilterControl}
         </div>
       </div>
 

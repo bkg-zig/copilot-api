@@ -18,36 +18,22 @@ import type {
   ResponseStreamEvent,
 } from "~/lib/types/responses"
 import type { CompletionPayloadOptions } from "~/routes/messages/handler"
-import { MESSAGES_TOOL_CALL_TIPS } from "~/routes/responses/messages-translation"
+import {
+  encodeMessagesCompaction,
+  MESSAGES_TOOL_CALL_TIPS,
+} from "~/routes/responses/messages-translation"
+import { COMPACTION_REPLAY_PROMPT } from "~/routes/responses/messages-translation/constants"
 import {
   createResponsesWebSocketStreamChunk,
   type createResponses as createCopilotResponses,
 } from "~/services/copilot/create-responses"
 
+import { createResponsesResult } from "./fixtures/responses"
+
 let responsesApiWebSocketEnabled = true
 
 const createResponses = mock((() =>
   Promise.resolve(streamChunks([]))) as typeof createCopilotResponses)
-
-const createResponsesResult = (model: string) => ({
-  created_at: 0,
-  error: null,
-  id: "resp-test",
-  incomplete_details: null,
-  instructions: null,
-  metadata: null,
-  model,
-  object: "response" as const,
-  output: [],
-  output_text: "",
-  parallel_tool_calls: false,
-  status: "completed",
-  temperature: null,
-  tool_choice: "auto",
-  tools: [],
-  top_p: null,
-  usage: null,
-})
 
 const createReasoningResult = (
   model: string,
@@ -424,6 +410,129 @@ describe("Codex task title model routing on Responses", () => {
       ...titleInput,
     ])
   })
+})
+
+describe("responses injected page context", () => {
+  test.each([false, true])(
+    "accepts page context with stream=%s",
+    async (stream) => {
+      state.models = {
+        object: "list",
+        data: [
+          {
+            capabilities: { limits: { max_prompt_tokens: 128000 } },
+            id: "gemini-test",
+            supported_endpoints: ["/v1/messages"],
+          },
+        ],
+      } as typeof state.models
+      const handleMessages = mock(
+        (_context: Context, _payload: AnthropicMessagesPayload) =>
+          Promise.resolve(
+            createMessagesResponse([{ type: "text", text: "Hi!" }]),
+          ),
+      )
+      responsesMessagesDependencies.handleCompletionPayload = handleMessages
+
+      const response = await createApp().request("/v1/responses", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "user-agent": "Codex/0.167.0",
+        },
+        body: JSON.stringify({
+          model: "gemini-test",
+          stream,
+          input: [
+            {
+              type: "function_call_output",
+              namespace: "agent",
+              name: "codex_apps_open_page",
+              output: '{"page_id":null}',
+            },
+            {
+              type: "function_call_output",
+              namespace: "agent",
+              name: "codex_apps_selected_page_part_1_of_1",
+              output:
+                'Companion Page snapshot part 1 of 1:\n{"page_id":null,"document_view":null}',
+            },
+            {
+              type: "function_call_output",
+              namespace: "codex_app",
+              name: "send_message_to_thread",
+              output:
+                "<codex_delegation>\n  <source_thread_id>t-1</source_thread_id>\n  <input>hi</input>\n</codex_delegation>",
+            },
+            { type: "message", role: "user", content: "hi" },
+          ],
+        }),
+      })
+
+      expect(response.status).toBe(200)
+      expect(handleMessages).toHaveBeenCalledTimes(1)
+      const forwarded = handleMessages.mock.calls[0]?.[1]
+      expect(forwarded?.stream).toBe(stream)
+      const blocks = getMessageBlocks(forwarded)
+      expect(blocks).toContainEqual({ type: "text", text: '{"page_id":null}' })
+      expect(blocks).toContainEqual({
+        type: "text",
+        text: "codex_app.send_message_to_thread:",
+      })
+      expect(blocks.some((block) => block.type === "tool_result")).toBe(false)
+      if (stream) {
+        const body = await response.text()
+        expect(body).toContain("event: response.completed")
+        expect(body).toContain("Hi!")
+      } else {
+        expect(await response.json()).toMatchObject({
+          status: "completed",
+          output_text: "Hi!",
+        })
+      }
+    },
+  )
+})
+
+describe("Responses Messages compaction replay", () => {
+  test.each([false, true])(
+    "restores handoff text for Copilot with stream=%s",
+    async (stream) => {
+      const summary =
+        "DeepSeek prepared the change; preserve this context for review."
+      const action = { role: "user", content: "Review the next command" }
+      createResponses.mockImplementation((payload) =>
+        Promise.resolve(createResponsesResult(payload.model)),
+      )
+
+      const response = await createApp().request("/v1/responses", {
+        body: JSON.stringify({
+          model: "gpt-test",
+          stream,
+          input: [
+            {
+              type: "compaction",
+              id: "cmp-deepseek",
+              encrypted_content: encodeMessagesCompaction(summary),
+            },
+            action,
+          ],
+        }),
+        headers: { "content-type": "application/json" },
+        method: "POST",
+      })
+
+      expect(response.status).toBe(200)
+      expect(createResponses.mock.calls[0][0].input).toEqual([
+        {
+          type: "message",
+          role: "user",
+          content: `${COMPACTION_REPLAY_PROMPT}${summary}`,
+        },
+        action,
+      ])
+    },
+  )
 })
 
 describe("responses reasoning transport isolation", () => {

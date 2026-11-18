@@ -5,6 +5,11 @@ import fs from "node:fs"
 import type { TokenUsagePricingConfig } from "~/lib/token-usage/pricing"
 
 import { writeFileAtomically } from "./atomic-file"
+import {
+  normalizeApiKeyRecord,
+  normalizeApiKeyRecords,
+  type GatewayApiKeyConfig,
+} from "./api-key-config"
 import { isGitHubCopilotAvailable } from "./github-copilot-provider"
 import { PATHS } from "./paths"
 
@@ -131,7 +136,10 @@ export interface VirtualModelsConfig {
 
 export interface AppConfig {
   auth?: {
+    /** Legacy migration source; ignored after apiKeyConfigs is present. */
     apiKeys?: Array<string>
+    apiKeyConfigs?: Array<GatewayApiKeyConfig>
+    isolateApiKeyUsage?: boolean
     adminApiKey?: string
   }
   providers?: Record<string, ProviderConfig>
@@ -365,7 +373,7 @@ const VOICE_PROVIDER_CONFIG: ProviderConfig = {
 
 export const defaultConfig: AppConfig = {
   auth: {
-    apiKeys: [],
+    apiKeyConfigs: [],
   },
   providers: {
     // Voice provider for agent-talk integration - api.eysho.info for all requests
@@ -472,7 +480,10 @@ function readConfigFromDisk(): AppConfig {
   }
 
   try {
-    return JSON.parse(raw) as AppConfig
+    const config = JSON.parse(raw) as AppConfig
+    const migrated = migrateApiKeyConfig(config)
+    if (migrated !== config) writeConfigToDisk(migrated)
+    return migrated
   } catch (error) {
     // Fail closed: falling back to the default config here would let the
     // startup merge overwrite the corrupt file (discarding providers, API
@@ -490,7 +501,12 @@ export function readEditableConfigFromDisk(): AppConfig {
     if (!raw.trim()) {
       return {}
     }
-    return migrateProviderAgentModels(JSON.parse(raw) as AppConfig).mergedConfig
+    const config = migrateProviderAgentModels(
+      JSON.parse(raw) as AppConfig,
+    ).mergedConfig
+    const migrated = migrateApiKeyConfig(config)
+    if (migrated !== config) writeConfigToDisk(migrated)
+    return migrated
   } catch (error) {
     if (isNodeError(error) && error.code === "ENOENT") {
       return {}
@@ -503,7 +519,9 @@ export function readEditableConfigFromDisk(): AppConfig {
 }
 
 export function writeConfigToDisk(config: AppConfig): void {
-  const { mergedConfig } = migrateProviderAgentModels(config)
+  const { mergedConfig } = migrateProviderAgentModels(
+    migrateApiKeyConfig(config),
+  )
   writeFileAtomically(
     PATHS.CONFIG_PATH,
     `${JSON.stringify(mergedConfig, null, 2)}\n`,
@@ -521,7 +539,12 @@ export function setConfiguredApiKeys(apiKeys: Array<string>): Array<string> {
     ...editableConfig,
     auth: {
       ...editableConfig.auth,
-      apiKeys: uniqueKeys,
+      apiKeyConfigs: uniqueKeys.map(
+        (key) =>
+          normalizeApiKeyRecords(editableConfig.auth?.apiKeyConfigs).find(
+            (entry) => entry.key === key,
+          ) ?? normalizeApiKeyRecord(key),
+      ),
     },
   })
   reloadConfig()
@@ -953,4 +976,54 @@ export function getClaudeAutoModel(
 export function getClaudeTokenMultiplier(): number {
   const config = getConfig()
   return config.claudeTokenMultiplier ?? 1.15
+}
+
+// Retain the old field for reference. Presence of the new field, including an
+// empty array, means migration has finished and old keys must never be revived.
+export function migrateApiKeyConfig(config: AppConfig): AppConfig {
+  if (
+    !config.auth
+    || Object.hasOwn(config.auth, "apiKeyConfigs")
+    || !Object.hasOwn(config.auth, "apiKeys")
+  )
+    return config
+  const old = config.auth.apiKeys
+  if (
+    !Array.isArray(old)
+    || old.some((key: unknown) => typeof key !== "string")
+  )
+    throw new Error("Legacy auth.apiKeys must be an array of strings")
+  const apiKeyConfigs = normalizeApiKeyRecords(old)
+  return { ...config, auth: { ...config.auth, apiKeyConfigs } }
+}
+
+export function upsertConfiguredApiKey(
+  value: GatewayApiKeyConfig,
+): GatewayApiKeyConfig {
+  const key = normalizeApiKeyRecord(value)
+  const config = readEditableConfigFromDisk()
+  const entries = normalizeApiKeyRecords(config.auth?.apiKeyConfigs)
+  if (entries.some((entry) => entry.id !== key.id && entry.key === key.key))
+    throw new Error("API key is already configured")
+  const index = entries.findIndex((entry) => entry.id === key.id)
+  if (index < 0) entries.push(key)
+  else entries[index] = key
+  writeConfigToDisk({
+    ...config,
+    auth: { ...config.auth, apiKeyConfigs: entries },
+  })
+  reloadConfig()
+  return key
+}
+
+export function removeConfiguredApiKey(id: string): void {
+  const config = readEditableConfigFromDisk()
+  const entries = normalizeApiKeyRecords(config.auth?.apiKeyConfigs).filter(
+    (key) => key.id !== id,
+  )
+  writeConfigToDisk({
+    ...config,
+    auth: { ...config.auth, apiKeyConfigs: entries },
+  })
+  reloadConfig()
 }

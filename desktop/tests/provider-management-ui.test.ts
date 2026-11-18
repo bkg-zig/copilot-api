@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test'
-import { Window } from 'happy-dom'
+import type { Window } from 'happy-dom'
 import { act, createElement } from 'react'
 import type { Root } from 'react-dom/client'
+import { createTestDom } from './helpers/dom'
 import ProviderManagementModal from '../src/components/ProviderManagementModal'
 import ProviderManagementPanel from '../src/components/ProviderManagementPanel'
 import DashboardPage from '../src/pages/DashboardPage'
@@ -43,29 +44,10 @@ let getModelOptions: ReturnType<
   typeof mock<() => Promise<ProviderModelOptions>>
 >
 let fetchModels: ReturnType<typeof mock<() => Promise<unknown>>>
-const previousGlobals = new Map<string, PropertyDescriptor | undefined>()
+let cleanupDom: () => Promise<void>
 
 beforeEach(async () => {
-  win = new Window({ url: 'http://localhost' })
-  const globals: Record<string, unknown> = {
-    window: win,
-    document: win.document,
-    navigator: win.navigator,
-    HTMLElement: win.HTMLElement,
-    HTMLInputElement: win.HTMLInputElement,
-    HTMLTextAreaElement: win.HTMLTextAreaElement,
-    Event: win.Event,
-    MouseEvent: win.MouseEvent,
-    IS_REACT_ACT_ENVIRONMENT: true,
-  }
-  for (const [name, value] of Object.entries(globals)) {
-    previousGlobals.set(name, Object.getOwnPropertyDescriptor(globalThis, name))
-    Object.defineProperty(globalThis, name, {
-      configurable: true,
-      writable: true,
-      value,
-    })
-  }
+  ;({ win, root, container, cleanup: cleanupDom } = await createTestDom())
   getConfig = mock(() => Promise.resolve(structuredClone(fixture)))
   saveConfig = mock(() => Promise.resolve(structuredClone(fixture)))
   getModelOptions = mock(() =>
@@ -96,21 +78,12 @@ beforeEach(async () => {
       onAppUpdateStatus: () => () => {},
     },
   })
-  container = document.createElement('div')
-  document.body.append(container)
-  const { createRoot } = await import('react-dom/client')
-  root = createRoot(container)
 })
 afterEach(async () => {
   await act(async () => {
     root.unmount()
   })
-  await win.happyDOM.close()
-  for (const [name, descriptor] of previousGlobals) {
-    if (descriptor) Object.defineProperty(globalThis, name, descriptor)
-    else Reflect.deleteProperty(globalThis, name)
-  }
-  previousGlobals.clear()
+  await cleanupDom()
 })
 async function render(
   props: Partial<Parameters<typeof ProviderManagementModal>[0]> = {},
@@ -1100,8 +1073,18 @@ describe('provider management UI', () => {
     expect(container.textContent).not.toContain('copilot_pro')
   })
 
-  test('allows provider management and advanced configuration while stopped', async () => {
+  test('allows provider, API key and advanced configuration management while stopped', async () => {
     Object.assign(window.electronAPI, {
+      getServerKeys: () =>
+        Promise.resolve({
+          apiKeys: ['fixture-key'],
+          adminApiKey: 'fixture-admin',
+        }),
+      getManagedApiKeys: () =>
+        Promise.resolve([
+          { id: 'desktop-key', key: 'fixture-key', name: 'Desktop key' },
+        ]),
+      getApiKeyQuotaUsage: () => Promise.resolve(null),
       getSettings: () =>
         Promise.resolve({ showCreate: true, host: '127.0.0.1' }),
     })
@@ -1121,6 +1104,9 @@ describe('provider management UI', () => {
       ...container.querySelectorAll<HTMLButtonElement>('[role="tab"]'),
     ]
     const providersTab = tabs.find((tab) => tab.textContent === 'Providers')!
+    const keysTab = tabs.find((tab) => tab.textContent === 'API Keys')!
+    expect(tabs.indexOf(keysTab)).toBe(tabs.indexOf(providersTab) + 1)
+    expect(keysTab.disabled).toBe(false)
     const configTab = tabs.find((tab) =>
       tab.textContent?.toLowerCase().includes('advanced config'),
     )!
@@ -1162,6 +1148,19 @@ describe('provider management UI', () => {
         (node) => node.textContent === 'Providers',
       ),
     ).toHaveLength(1)
+    await act(async () => keysTab.click())
+    expect(selectedTabLabel()).toBe('API Keys')
+    expect(
+      container.querySelector('[aria-label="API Keys"]')?.textContent,
+    ).toContain('Desktop key')
+    expect(
+      container.querySelector('[aria-label="API Keys"]')?.textContent,
+    ).toContain('Start the service')
+    expect(
+      [...container.querySelectorAll('button')].some(
+        (node) => node.textContent === 'Start server',
+      ),
+    ).toBe(false)
     await act(async () => studioTab.click())
     expect(selectedTabLabel()).toBe('Create')
     expect(container.querySelector('textarea')?.value).toBe('Keep this draft')

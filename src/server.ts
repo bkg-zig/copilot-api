@@ -1,3 +1,5 @@
+import { apiKeyPolicyMiddleware } from "./lib/api-key-policy"
+import { apiKeyUsageRoutes } from "./routes/admin/api-keys/route"
 import { Hono, type Context } from "hono"
 import { cors } from "hono/cors"
 import { logger } from "hono/logger"
@@ -74,11 +76,15 @@ export function createServer(options: CreateServerOptions = {}): Hono {
           "x-requested-with",
         ],
         allowMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
-        exposeHeaders: ["x-trace-id"],
+        exposeHeaders: ["x-trace-id", "X-API-Key-Usage-Isolated"],
         maxAge: 86400,
       })
-    : networkExposed ? cors({ origin: resolveSameOriginCorsOrigin })
-    : cors(),
+    : networkExposed ?
+      cors({
+        origin: resolveSameOriginCorsOrigin,
+        exposeHeaders: ["X-API-Key-Usage-Isolated"],
+      })
+    : cors({ exposeHeaders: ["X-API-Key-Usage-Isolated"] }),
   )
   server.use(
     "*",
@@ -108,6 +114,8 @@ export function createServer(options: CreateServerOptions = {}): Hono {
       allowWhenNoApiKeys: false,
     }),
   )
+
+  server.use("*", apiKeyPolicyMiddleware)
 
   server.use(
     "*",
@@ -144,7 +152,10 @@ export function createServer(options: CreateServerOptions = {}): Hono {
   server.route("/models", modelRoutes)
   server.route("/embeddings", embeddingRoutes)
   server.route("/usage", usageRoute)
+  server.route("/admin/usage", usageRoute)
   server.route("/token-usage", tokenUsageRoute)
+  server.route("/admin/token-usage", tokenUsageRoute)
+  server.route("/admin/api-keys/usage", apiKeyUsageRoutes)
   server.route("/responses", responsesRoutes)
   server.route("/alpha/search", alphaSearchRoutes)
   server.route("/images", imageRoutes)
@@ -176,5 +187,3 @@ export function createServer(options: CreateServerOptions = {}): Hono {
 
   return server
 }
-
-export const server = createServer()

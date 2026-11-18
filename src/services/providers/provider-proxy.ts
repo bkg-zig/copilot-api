@@ -32,6 +32,7 @@ import type { ResponsesPayload } from "~/lib/types/responses"
 import type { GoogleModelsResponse } from "~/lib/types/google"
 import { createChatGPTWebChatCompletion } from "~/services/chatgpt/chat-completions"
 import { fetchUpstreamWithLifecycle } from "~/services/upstream-http"
+import { recordNativeAlphaSearchUsage } from "~/lib/token-usage/alpha-search"
 import { getWebAdapter } from "~/services/web/registry"
 import { webErrorResponse } from "~/services/web/stream"
 import { WebSessionError } from "~/services/web/types"
@@ -59,10 +60,27 @@ const STRIPPED_RESPONSE_HEADERS = [
   "upgrade",
 ] as const
 
+export function supportsNativeDeepSeekAlphaSearch(
+  providerConfig: ResolvedProviderConfig,
+): boolean {
+  return (
+    providerConfig.name === "deepseek"
+    && /^https:\/\/api\.deepseek\.com(?:\/anthropic)?(?:\/v1)?\/?$/u.test(
+      providerConfig.baseUrl,
+    )
+  )
+}
+
 export function resolveProviderEndpointUrl(
   providerConfig: ResolvedProviderConfig,
   endpoint: string,
 ): string {
+  if (
+    endpoint === "alpha/search"
+    && supportsNativeDeepSeekAlphaSearch(providerConfig)
+  ) {
+    return new URL(`/${endpoint}`, providerConfig.baseUrl).toString()
+  }
   if (providerConfig.name === OPENCODE_GO_PROVIDER_NAME) {
     const base = normalizeProviderBaseUrl(providerConfig.baseUrl)
     const apiBase = /\/v\d+(?:alpha|beta)?$/u.test(base) ? base : `${base}/v1`
@@ -565,9 +583,22 @@ export async function forwardProviderAlphaSearch(
 ): Promise<Response> {
   const body = await request.arrayBuffer()
   const transportConfig = getUpstreamTransportConfig()
+  const searchPayload: unknown = JSON.parse(new TextDecoder().decode(body))
+  const searchModel =
+    (
+      typeof searchPayload === "object"
+      && searchPayload !== null
+      && "model" in searchPayload
+      && typeof searchPayload.model === "string"
+    ) ?
+      searchPayload.model
+    : "alpha-search"
+  setPluginRequestActualModel(searchModel, providerConfig, "alpha_search")
 
-  return await fetchProviderUpstream(
-    providerConfig,
+  const response = await fetchProviderUpstream(
+    supportsNativeDeepSeekAlphaSearch(providerConfig) ?
+      { ...providerConfig, authType: "authorization", type: "openai-responses" }
+    : providerConfig,
     request.headers,
     resolveProviderRequestUrl(providerConfig, request.url, "/v1/alpha/search"),
     {
@@ -577,6 +608,14 @@ export async function forwardProviderAlphaSearch(
       streamInactivityTimeoutMs: transportConfig.streamInactivityTimeoutMs,
     },
   )
+  await recordNativeAlphaSearchUsage(response, {
+    providerName: providerConfig.name,
+    requestBody: body,
+    requestHeaders: request.headers,
+    officialDeepSeek: supportsNativeDeepSeekAlphaSearch(providerConfig),
+    pricingCurrency: providerConfig.pricingCurrency,
+  })
+  return response
 }
 
 export async function forwardProviderImages(

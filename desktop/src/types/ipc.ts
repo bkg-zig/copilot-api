@@ -1,4 +1,17 @@
+import type { GatewayApiKeyConfig } from '../../../src/lib/types/api-key'
+export type { GatewayApiKeyConfig } from '../../../src/lib/types/api-key'
 import type { LangPreference } from '../locales'
+import type {
+  ClientAgent,
+  ClientId,
+  ClientIntegrationsState,
+  ClientModelOption,
+  ClientRestoreResult,
+  ClientSetupInput,
+  ClientSetupResult,
+} from '../../shared/client-integrations'
+
+export type ClientIntegrationReply<T> = { data: T } | { error: string }
 import type {
   SubscriptionProvider,
   SubscriptionUsage,
@@ -112,13 +125,22 @@ export interface ServerAuthInfo {
   headerValue?: string
 }
 
+export interface ApiKeyQuotaUsage {
+  id: string
+  usedAmount: number
+  remainingAmount: number | null
+  resetsAt: number | null
+}
+
 export interface ServerKeysConfig {
   apiKeys: string[]
   adminApiKey: string
+  isolateApiKeyUsage?: boolean
 }
 
 export interface ServerKeysConfigUpdate {
   apiKeys?: string[]
+  isolateApiKeyUsage?: boolean
   // undefined = leave the field untouched, '' or null = remove the admin key
   adminApiKey?: string | null
 }
@@ -394,6 +416,22 @@ declare global {
         provider: SubscriptionProvider,
       ) => Promise<SubscriptionUsage | null>
       fetchModels: () => Promise<unknown>
+      getClientIntegrations: (
+        agent?: ClientAgent,
+      ) => Promise<ClientIntegrationReply<ClientIntegrationsState>>
+      getClientModels: (
+        client: 'claude' | 'codex',
+      ) => Promise<ClientIntegrationReply<ClientModelOption[]>>
+      setupClient: (
+        input: ClientSetupInput,
+      ) => Promise<ClientIntegrationReply<ClientSetupResult>>
+      restoreClient: (
+        client: ClientId,
+        revision: string,
+      ) => Promise<ClientIntegrationReply<ClientRestoreResult>>
+      openClientConfig: (
+        client: ClientId,
+      ) => Promise<ClientIntegrationReply<void>>
       createImages: (
         id: string,
         input: ImageCreationInput,
@@ -406,19 +444,33 @@ declare global {
       cancelMediaRequest: (id: string) => Promise<void>
       saveMedia: (input: SaveMediaInput) => Promise<boolean>
       getProviderModelOptions: () => Promise<ProviderModelOptions>
-      fetchTokenUsage: (period: TokenUsagePeriod) => Promise<unknown>
-      fetchTokenUsageDaily: (period: TokenUsagePeriod) => Promise<unknown>
+      fetchTokenUsage: (
+        period: TokenUsagePeriod,
+        apiKeyId?: string,
+      ) => Promise<unknown>
+      fetchTokenUsageDaily: (
+        period: TokenUsagePeriod,
+        apiKeyId?: string,
+      ) => Promise<unknown>
       fetchTokenUsageEvents: (
         period: TokenUsagePeriod,
         page: number,
         pageSize: number,
+        apiKeyId?: string,
       ) => Promise<unknown>
       fetchTokenUsageSessions: (
         period: TokenUsagePeriod,
         page: number,
         pageSize: number,
+        apiKeyId?: string,
       ) => Promise<unknown>
       getServerAuthInfo: () => Promise<ServerAuthInfo>
+      getManagedApiKeys: () => Promise<GatewayApiKeyConfig[]>
+      saveManagedApiKey: (
+        key: GatewayApiKeyConfig,
+      ) => Promise<GatewayApiKeyConfig[]>
+      removeManagedApiKey: (id: string) => Promise<GatewayApiKeyConfig[]>
+      getApiKeyQuotaUsage: () => Promise<ApiKeyQuotaUsage[] | null>
       getServerKeys: () => Promise<ServerKeysConfig>
       saveServerKeys: (
         keys: ServerKeysConfigUpdate,
