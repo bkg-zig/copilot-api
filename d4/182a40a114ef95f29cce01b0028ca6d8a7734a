@@ -1,0 +1,14 @@
+.gitignore
+  h_76ea00ebfa3ec3 30-35
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "d4182a40a114ef95f29cce01b0028ca6d8a7734a",
+  "prompts": {},
+  "humans": {
+    "h_76ea00ebfa3ec3": {
+      "author": "bkg <bkg@skill.eysho.info>"
+    }
+  }
+}
