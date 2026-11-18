@@ -23,17 +23,34 @@ import {
   usesModelsDevModelCatalog,
 } from "./provider-model-catalog"
 
+export interface ResolvedProviderApiKey {
+  key: string
+  rpm?: number
+}
+
 export interface ResolvedProviderConfig {
   name: string
   type: ProviderType
   baseUrl: string
   modelsDevProviderId?: string
   apiKey: string
+  /**
+   * Enabled keys for rotation. Always contains at least one entry when the
+   * provider authenticates with a key; `apiKey` mirrors the first entry for
+   * the single-key paths. Undefined for auth types without a key.
+   */
+  keyPool?: Array<ResolvedProviderApiKey>
   authType: ProviderAuthType
   authTypeExplicit?: boolean
   pricingCurrency?: string
   models?: Record<string, ModelConfig>
   agentsModels?: Array<string>
+  /** Glob patterns of upstream model ids to keep (only matching ids listed). */
+  includeModels?: Array<string>
+  /** Glob patterns of upstream model ids to hide. */
+  excludeModels?: Array<string>
+  cookie?: string
+  webAdapter?: string
 }
 
 export function normalizeProviderBaseUrl(url: string): string {
@@ -54,6 +71,7 @@ function getDefaultProviderAuthType(
   providerType: ProviderType,
 ): ProviderAuthType {
   if (providerType === "google") return "x-goog-api-key"
+  if (providerType === "chatgpt" || providerType === "web") return "cookie"
   return providerType === "anthropic" ? "x-api-key" : "authorization"
 }
 
@@ -72,12 +90,16 @@ export function resolveProviderAuthType(
   }
 
   if (authType === "oauth2") {
-    if (providerName === "codex" || providerName === "xai") {
+    if (
+      providerName === "codex"
+      || providerName === "xai"
+      || providerName === "anthropic"
+    ) {
       return authType
     }
 
     consola.warn(
-      `Provider ${providerName} has authType 'oauth2', which is only supported by the builtin codex and xai providers, falling back to ${defaultAuthType}`,
+      `Provider ${providerName} has authType 'oauth2', which is only supported by the builtin codex, xai and anthropic providers, falling back to ${defaultAuthType}`,
     )
     return defaultAuthType
   }
@@ -86,10 +108,63 @@ export function resolveProviderAuthType(
     return authType
   }
 
+  if (authType === "cookie") {
+    if (providerType === "chatgpt" || providerType === "web") {
+      return authType
+    }
+
+    consola.warn(
+      `Provider ${providerName} has authType 'cookie', which is only supported by chatgpt and web providers, falling back to ${defaultAuthType}`,
+    )
+    return defaultAuthType
+  }
+
   consola.warn(
     `Provider ${providerName} has invalid authType '${authType}', falling back to ${defaultAuthType}`,
   )
   return defaultAuthType
+}
+
+/**
+ * Normalizes the single `apiKey` shorthand and the `apiKeys` pool into one
+ * deduplicated list of enabled keys. Entries may be objects or bare strings so
+ * hand-written config files stay valid.
+ */
+export function resolveProviderApiKeyPool(
+  provider: ProviderConfig,
+): Array<ResolvedProviderApiKey> {
+  const entries: Array<unknown> = [
+    ...(Array.isArray(provider.apiKeys) ? provider.apiKeys : []),
+    provider.apiKey,
+  ]
+  const pool: Array<ResolvedProviderApiKey> = []
+  const seen = new Set<string>()
+
+  for (const entry of entries) {
+    const record =
+      typeof entry === "string" ? { key: entry }
+      : entry && typeof entry === "object" ?
+        (entry as { key?: unknown; rpm?: unknown; enabled?: unknown })
+      : null
+    if (!record || record.enabled === false) continue
+    if (typeof record.key !== "string") continue
+
+    const key = record.key.trim()
+    if (!key || seen.has(key)) continue
+    seen.add(key)
+
+    const rpm =
+      (
+        typeof record.rpm === "number"
+        && Number.isFinite(record.rpm)
+        && record.rpm > 0
+      ) ?
+        Math.floor(record.rpm)
+      : undefined
+    pool.push(rpm === undefined ? { key } : { key, rpm })
+  }
+
+  return pool
 }
 
 function isProviderApiKeyRequired(
@@ -98,10 +173,12 @@ function isProviderApiKeyRequired(
 ): boolean {
   return (
     authType !== "azure-entra"
+    && authType !== "cookie"
     && !(
       (providerName === "codex" || providerName === "xai")
       && authType === "oauth2"
     )
+    && !(providerName === "anthropic" && authType === "oauth2")
   )
 }
 
@@ -144,24 +221,15 @@ export function setProviderConfig(
   return getRawProviderConfig(providerName) ?? provider
 }
 
-export function getProviderConfig(name: string): ResolvedProviderConfig | null {
-  const providerName = name.trim()
-  if (!providerName) {
-    return null
-  }
-
-  if (isReservedProviderName(providerName)) {
-    consola.warn(
-      `Provider ${providerName} is reserved and cannot be configured in config.providers`,
-    )
-    return null
-  }
-
-  const provider = getRawProviderConfig(providerName)
-  if (!provider) {
-    return null
-  }
-
+/**
+ * Validates and normalizes one raw provider entry. Pure with respect to the
+ * config store so it can be tested without touching global config state; the
+ * caller is responsible for resolving `provider` from a name.
+ */
+export function resolveProviderConfigFromProvider(
+  providerName: string,
+  provider: ProviderConfig,
+): ResolvedProviderConfig | null {
   if (provider.enabled === false) {
     return null
   }
@@ -174,15 +242,24 @@ export function getProviderConfig(name: string): ResolvedProviderConfig | null {
     return null
   }
 
-  const baseUrl = normalizeProviderBaseUrl(provider.baseUrl ?? "")
+  const defaultChatGPTBaseUrl = "https://chatgpt.com/backend-api"
+  const baseUrl = normalizeProviderBaseUrl(
+    type === "chatgpt" && !provider.baseUrl ? defaultChatGPTBaseUrl
+    : (
+      type === "anthropic" && providerName === "anthropic" && !provider.baseUrl
+    ) ?
+      "https://api.anthropic.com"
+    : (provider.baseUrl ?? ""),
+  )
   const authType = resolveProviderAuthType(
     providerName,
     provider.authType,
     type,
   )
-  const apiKey = (provider.apiKey ?? "").trim()
+  const keyPool = resolveProviderApiKeyPool(provider)
+  const apiKey = keyPool[0]?.key ?? ""
   const missingFields = [
-    ...(baseUrl ? [] : ["baseUrl"]),
+    ...(baseUrl || type === "web" ? [] : ["baseUrl"]),
     ...(isProviderApiKeyRequired(providerName, authType) && !apiKey ?
       ["apiKey"]
     : []),
@@ -201,12 +278,38 @@ export function getProviderConfig(name: string): ResolvedProviderConfig | null {
     baseUrl,
     modelsDevProviderId: provider.modelsDevProviderId,
     apiKey,
+    keyPool: keyPool.length > 1 ? keyPool : undefined,
     authType,
     authTypeExplicit: provider.authType !== undefined,
     pricingCurrency: normalizePricingCurrency(provider.pricingCurrency),
     models: provider.models,
     agentsModels: provider.agentsModels,
+    includeModels: provider.includeModels,
+    excludeModels: provider.excludeModels,
+    cookie: provider.cookie?.trim(),
+    webAdapter: provider.webAdapter?.trim() || undefined,
   }
+}
+
+export function getProviderConfig(name: string): ResolvedProviderConfig | null {
+  const providerName = name.trim()
+  if (!providerName) {
+    return null
+  }
+
+  if (isReservedProviderName(providerName)) {
+    consola.warn(
+      `Provider ${providerName} is reserved and cannot be configured in config.providers`,
+    )
+    return null
+  }
+
+  const provider = getRawProviderConfig(providerName)
+  if (!provider) {
+    return null
+  }
+
+  return resolveProviderConfigFromProvider(providerName, provider)
 }
 
 export function resolveEffectiveProviderType(

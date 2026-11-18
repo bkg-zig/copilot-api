@@ -5,6 +5,7 @@ import util from "node:util"
 
 import { PATHS } from "./paths"
 import { registerProcessCleanup } from "./process-cleanup"
+import { redactText } from "./redact"
 import { requestContext } from "./request-context"
 import { state } from "./state"
 
@@ -299,7 +300,7 @@ export const createHandlerLogger = (name: string): ConsolaInstance => {
       const dateKey = date.toLocaleDateString("sv-SE")
       const timestamp = date.toLocaleString("sv-SE", { hour12: false })
       const filePath = path.join(getLogDir(), `${sanitizedName}-${dateKey}.log`)
-      const message = formatArgs(logObj.args as Array<unknown>)
+      const message = redactText(formatArgs(logObj.args as Array<unknown>))
       const traceIdStr = traceId ? ` [${traceId}]` : ""
       const line = `[${timestamp}] [${logObj.type}] [${logObj.tag || name}]${traceIdStr}${
         message ? ` ${message}` : ""

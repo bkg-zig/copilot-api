@@ -26,6 +26,26 @@ curl http://localhost:4141/admin/config/model-mappings \
   -H "x-api-key: your_admin_api_key"
 ```
 
+### Dashboard Login
+
+The web dashboard (`/`, `/usage-viewer`) signs in with a username and password instead of pasting API keys. API keys keep working for clients and scripts.
+
+- **First admin:** While no account exists, the dashboard shows *Create admin account*, which needs `auth.adminApiKey` once. Alternatively set `COPILOT_API_ADMIN_USERNAME` and `COPILOT_API_ADMIN_PASSWORD` before startup; they are only used while no account exists.
+- **Roles:** `admin` may use `/admin/*` and manage users in the Admin tab; `user` may use all non-admin routes.
+- **Sessions:** An `HttpOnly`, `SameSite=Strict` cookie (`Secure` behind HTTPS) valid for 7 days. Changing a user's role or password, or deleting the user, ends their sessions. Sessions are kept in memory, so a restart signs everyone out.
+- **Storage:** Accounts live in `users.json` next to `config.json` (mode `600`), with argon2id password hashes.
+- **Brute force:** After 10 failed logins from one client address, login is blocked for 15 minutes.
+
+| Endpoint | Method | Access | Description |
+| --- | --- | --- | --- |
+| `/auth/status` | `GET` | public | `setupRequired`, `setupNeedsAdminKey`, and the signed-in user, if any |
+| `/auth/setup` | `POST` | admin key | Creates the first admin (`username`, `password`, `adminKey`) |
+| `/auth/login` / `/auth/logout` | `POST` | public | Starts or ends a session |
+| `/auth/me` | `GET` | session | Current user |
+| `/auth/password` | `POST` | session | Changes your own password (`currentPassword`, `newPassword`) |
+| `/auth/users` | `GET`, `POST` | admin session | Lists users or creates one (`username`, `password`, `role`) |
+| `/auth/users/:username` | `PATCH`, `DELETE` | admin session | Changes `role`/`password` or deletes a user |
+
 ## API Endpoints
 
 The server exposes several OpenAI- and Anthropic-compatible endpoints. Requests can target GitHub Copilot, the built-in `codex` provider, or configured providers depending on the selected model and `provider/model` alias. Provider-scoped paths use the form `/:provider/v1/...` where supported; video endpoints are available only at the top level.

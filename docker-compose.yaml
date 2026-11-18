@@ -1,7 +1,7 @@
 services:
   data-init:
-    image: ghcr.io/caozhiyuan/copilot-api:latest
-    pull_policy: always
+    image: copilot-api-local:latest
+    pull_policy: never
     user: "0:0"
     entrypoint: ["/bin/sh", "-c"]
     environment:
@@ -50,6 +50,7 @@ services:
           for entry in \
             cache \
             logs \
+            claude_oauth.json \
             codex_credentials.json \
             config.json \
             copilot-api.sqlite \
@@ -63,12 +64,13 @@ services:
             fi
           done
 
-          # The token file name is dynamic: `github_token`, or
-          # `ent_github_token` when COPILOT_API_ENTERPRISE_URL is set, and it
-          # can live in an OAuth app subdirectory such as
-          # `opencode/github_token`. Match the name suffix so neither the
-          # enterprise prefix nor the app directory can be missed.
-          for token in /data/*github_token /data/*/*github_token; do
+          # The GitHub file names are dynamic: `github_token` and the
+          # dashboard's `github_accounts.json` get an `ent_` prefix when
+          # COPILOT_API_ENTERPRISE_URL is set, and both can live in an OAuth
+          # app subdirectory such as `opencode/`. Match the name suffix so
+          # neither the enterprise prefix nor the app directory can be missed.
+          for token in /data/*github_token /data/*/*github_token \
+            /data/*github_accounts.json /data/*/*github_accounts.json; do
             if [ -f "$$token" ]; then
               chown bun:bun "$$(dirname "$$token")"
               chown bun:bun "$$token"
@@ -97,8 +99,8 @@ services:
     restart: "no"
 
   copilot-api:
-    image: ghcr.io/caozhiyuan/copilot-api:latest
-    pull_policy: always
+    image: copilot-api-local:latest
+    pull_policy: never
     user: bun
     depends_on:
       data-init:
@@ -115,15 +117,38 @@ services:
       - "${COPILOT_API_BIND:-127.0.0.1}:${COPILOT_API_PORT:-4141}:4141"
     environment:
       COPILOT_API_HOME: /data
-      COPILOT_API_SQLITE_DB_PATH: ${COPILOT_API_SQLITE_DB_PATH:-/data/copilot-api.sqlite}
+      # Always the path inside the container: the host data directory
+      # (/srv/bkg/data/copilot-data) is mounted at /data. A host path must never
+      # leak in here, the container filesystem is read-only (EROFS).
+      COPILOT_API_SQLITE_DB_PATH: /data/copilot-api.sqlite
       COPILOT_API_ENTERPRISE_URL: ${COPILOT_API_ENTERPRISE_URL:-}
       COPILOT_API_OAUTH_APP: ${COPILOT_API_OAUTH_APP:-}
       XDG_CACHE_HOME: /data/cache
+      # Claude subscription sign-in is handled by the gateway itself and stores
+      # its OAuth token in /data/claude_oauth.json.
       COPILOT_API_GITHUB_TOKEN: ${COPILOT_API_GITHUB_TOKEN:-${GH_TOKEN:-}}
       HTTP_PROXY: ${HTTP_PROXY:-${http_proxy:-}}
       HTTPS_PROXY: ${HTTPS_PROXY:-${https_proxy:-}}
       ALL_PROXY: ${ALL_PROXY:-${all_proxy:-}}
       NO_PROXY: ${NO_PROXY:-${no_proxy:-127.0.0.1,localhost,::1}}
+      # CORS: comma-separated list of allowed origins (e.g. https://api.gitspit.com)
+      COPILOT_API_ALLOWED_ORIGINS: ${COPILOT_API_ALLOWED_ORIGINS:-}
+      # Dashboard login. The first admin gets a setup link at
+      # COPILOT_API_ADMIN_EMAIL (needs SMTP below). COPILOT_API_ADMIN_PASSWORD
+      # optionally creates that account at start instead; remove it afterwards.
+      COPILOT_API_ADMIN_EMAIL: ${COPILOT_API_ADMIN_EMAIL:-}
+      COPILOT_API_ADMIN_PASSWORD: ${COPILOT_API_ADMIN_PASSWORD:-}
+      # Base address used in emailed links (e.g. https://api.example.com).
+      COPILOT_API_PUBLIC_URL: ${COPILOT_API_PUBLIC_URL:-}
+      # Outgoing mail (STARTTLS is required unless SMTP_SECURE=true). Prefer
+      # SMTP_PASSWORD_FILE with a read-only mounted secret.
+      COPILOT_API_SMTP_HOST: ${COPILOT_API_SMTP_HOST:-}
+      COPILOT_API_SMTP_PORT: ${COPILOT_API_SMTP_PORT:-}
+      COPILOT_API_SMTP_USER: ${COPILOT_API_SMTP_USER:-}
+      COPILOT_API_SMTP_PASSWORD_FILE: ${COPILOT_API_SMTP_PASSWORD_FILE:-}
+      COPILOT_API_SMTP_FROM: ${COPILOT_API_SMTP_FROM:-}
+      COPILOT_API_SMTP_SECURE: ${COPILOT_API_SMTP_SECURE:-}
+      COPILOT_API_SMTP_TLS_SERVERNAME: ${COPILOT_API_SMTP_TLS_SERVERNAME:-}
     volumes:
       - type: bind
         source: ${COPILOT_API_DATA_DIR:-./copilot-data}

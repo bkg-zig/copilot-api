@@ -9,6 +9,15 @@ export interface OAuthAccountSummary {
   accountId: string
   alias?: string
   active: boolean
+  capabilities?: {
+    solAvailable: boolean
+    extraHighAvailable: boolean
+    proAvailable: boolean
+    experimentalBiggerContext: boolean
+    browserInteractionMode: "automatic" | "manual"
+    zeroRiskProEnabled: boolean
+    capabilitiesUpdatedAt?: number
+  }
 }
 
 export interface XaiAuthInfo {

@@ -107,6 +107,7 @@ const AUTH_PROVIDER_LABELS: Record<AuthProviderName, string> = {
   dashscope: "DashScope",
   openrouter: "OpenRouter",
   custom: "Custom provider",
+  voice: "Voice (api.eysho.info)",
 }
 
 function isAuthProviderName(

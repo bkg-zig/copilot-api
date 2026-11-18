@@ -4,9 +4,12 @@ import { streamSSE } from "hono/streaming"
 
 import {
   isResponsesApiWebSearchEnabled as isConfiguredResponsesApiWebSearchEnabled,
+  resolveComboModel,
   resolveMappedModel,
+  resolveRoutedModel,
 } from "~/lib/config"
 import { createHandlerLogger, debugJson, debugJsonTail } from "~/lib/logger"
+import { runComboFailover } from "~/lib/combo"
 import { recordResponsesFirstToken } from "~/lib/first-token"
 import { findEndpointModel } from "~/lib/models"
 import { resolveConfiguredProviderModelAlias } from "~/lib/provider-resolver"
@@ -25,6 +28,8 @@ import {
   normalizeResponsesUsage,
   type UsageTokens,
 } from "~/lib/token-usage"
+import { isGitHubCopilotEnabled } from "~/lib/github-copilot-provider"
+import { HTTPError } from "~/lib/error"
 import {
   generateRequestIdFromPayload,
   getUUID,
@@ -66,13 +71,37 @@ export const responsesHandlerDependencies = {
   findEndpointModel,
   isResponsesApiWebSearchEnabled: isConfiguredResponsesApiWebSearchEnabled,
   resolveMappedModel,
+  resolveRoutedModel,
 }
 
 export const handleResponses = async (c: Context) => {
   const payload = await c.req.json<ResponsesPayload>()
   setPluginRequestModel(payload.model)
+  return await dispatchResponses(c, payload)
+}
+
+const dispatchResponses = async (
+  c: Context,
+  payload: ResponsesPayload,
+): Promise<Response> => {
+  const comboTargets = resolveComboModel(payload.model)
+  if (comboTargets && comboTargets.length > 0) {
+    return await runComboFailover({
+      comboModel: payload.model,
+      targets: comboTargets,
+      logger,
+      run: (targetModel) =>
+        dispatchResponses(c, {
+          ...structuredClone(payload),
+          model: targetModel,
+        }),
+    })
+  }
+
   const requestedModel = payload.model
-  payload.model = responsesHandlerDependencies.resolveMappedModel(payload.model)
+  payload.model = responsesHandlerDependencies.resolveMappedModel(
+    responsesHandlerDependencies.resolveRoutedModel(payload.model, payload),
+  )
   if (payload.model !== requestedModel) {
     consola.debug(
       `Resolved model mapping: ${requestedModel} -> ${payload.model}`,
@@ -90,6 +119,22 @@ export const handleResponses = async (c: Context) => {
       provider: providerModelAlias.provider,
       publicModel: requestedModel,
     })
+  }
+
+  if (!isGitHubCopilotEnabled()) {
+    throw new HTTPError(
+      "No provider available for the requested model. GitHub Copilot is disabled.",
+      c.json(
+        {
+          error: {
+            message:
+              "No provider available for the requested model. GitHub Copilot is disabled.",
+            type: "provider_disabled",
+          },
+        },
+        { status: 403 },
+      ),
+    )
   }
 
   const taskTitleModel = getCodexTaskTitleModel(

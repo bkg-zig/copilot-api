@@ -6,6 +6,7 @@ import type { SubscriptionProvider } from '../types/ipc'
 const providerOrder: SubscriptionProvider[] = [
   'github-copilot',
   'codex',
+  'anthropic',
   'xai',
   'opencode-go',
 ]

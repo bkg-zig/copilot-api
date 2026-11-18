@@ -15,6 +15,7 @@ import { requestContext } from "~/lib/request-context"
 import { isAsyncIterable } from "~/lib/utils"
 import { createMessages } from "~/services/copilot/create-messages"
 import { getVSCodeVersion } from "~/services/get-vscode-version"
+import { writeConfigToDisk } from "~/lib/config-store"
 
 const originalFetch = globalThis.fetch
 const originalOauthApp = process.env.COPILOT_API_OAUTH_APP
@@ -82,6 +83,14 @@ const getRejectedError = async (pending: Promise<unknown>): Promise<Error> => {
 beforeEach(async () => {
   delete process.env.COPILOT_API_OAUTH_APP
   delete process.env.COPILOT_API_ENTERPRISE_URL
+  writeConfigToDisk({
+    providers: {
+      "github-copilot": {
+        enabled: true,
+        baseUrl: "https://api.individual.githubcopilot.com",
+      },
+    },
+  })
   Object.assign(state, {
     accountType: "individual",
     copilotApiUrl: "https://api.individual.githubcopilot.com",

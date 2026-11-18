@@ -165,6 +165,50 @@ describe("provider resolver", () => {
     })
   })
 
+  test("resolves chatgpt to its own web login, never the Codex account token", () => {
+    const tempDir = createTempDir()
+    writeConfigFile(tempDir, {
+      providers: {
+        chatgpt: {
+          type: "chatgpt",
+          enabled: true,
+          authType: "cookie",
+          baseUrl: "https://chatgpt.com/backend-api",
+          cookie: "__Secure-next-auth.session-token=web-session",
+        },
+        codex: {
+          type: "openai-responses",
+          enabled: true,
+          authType: "oauth2",
+          baseUrl: "https://chatgpt.com/backend-api",
+        },
+      },
+    })
+    writeCodexCredentials(tempDir, {
+      accessToken: "codex-access-token",
+      accountId: "acct_test",
+      expiresAt: Date.now() + 60 * 60 * 1000,
+      refreshToken: "codex-refresh-token",
+    })
+
+    const output = runScript(
+      tempDir,
+      'const { resolveProviderConfig } = await import("./src/lib/provider-resolver"); const { saveProviderManagementConfig } = await import("./src/lib/provider-management"); const resolved = await resolveProviderConfig("chatgpt"); saveProviderManagementConfig({ providers: { chatgpt: { enabled: false } } }); console.log(JSON.stringify({ resolved, disabled: await resolveProviderConfig("chatgpt") }));',
+    )
+
+    expect(JSON.parse(output)).toEqual({
+      disabled: null,
+      resolved: expect.objectContaining({
+        apiKey: "",
+        authType: "cookie",
+        baseUrl: "https://chatgpt.com/backend-api",
+        cookie: "__Secure-next-auth.session-token=web-session",
+        name: "chatgpt",
+        type: "chatgpt",
+      }) as unknown,
+    })
+  })
+
   test("returns null when codex provider is disabled", () => {
     const tempDir = createTempDir()
     writeConfigFile(tempDir, {

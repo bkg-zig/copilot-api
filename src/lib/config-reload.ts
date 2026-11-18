@@ -4,6 +4,8 @@ import { getConfig, reloadConfig } from "~/lib/config-store"
 import { setupCopilotRuntime } from "~/lib/copilot-runtime"
 import { readGitHubToken, readGitHubTokenFromEnv } from "~/lib/credential-store"
 import { isGitHubCopilotEnabled } from "~/lib/github-copilot-provider"
+import { describeCopilotSetupError } from "~/lib/github-error-message"
+import { listEnabledProviders } from "~/lib/provider-config"
 import { state } from "~/lib/state"
 import { invalidateCodexRuntime, stopCopilotRefreshLoop } from "~/lib/token"
 import { stopModelsRefreshLoop } from "~/services/copilot/models-cache"
@@ -19,6 +21,7 @@ async function applyConfigReload(): Promise<void> {
   // The next Codex request reads the saved credentials and starts a fresh loop.
   invalidateCodexRuntime()
   if (!isGitHubCopilotEnabled(config)) {
+    state.copilotSetupError = undefined
     consola.debug(
       "Config reload: Copilot is disabled; stopping its refresh loop",
     )
@@ -48,6 +51,7 @@ async function applyConfigReload(): Promise<void> {
     state.userName = undefined
     state.copilotApiUrl = undefined
     state.tokenBasedBilling = undefined
+    state.copilotSetupError = undefined
     return
   }
 
@@ -77,7 +81,21 @@ async function applyConfigReload(): Promise<void> {
   consola.debug(
     `Config reload: initializing Copilot runtime with the ${state.githubTokenSource} GitHub token`,
   )
-  await setupCopilotRuntime(githubToken)
+  try {
+    await setupCopilotRuntime(githubToken)
+  } catch (error) {
+    state.copilotSetupError = await describeCopilotSetupError(error)
+    // Same rule as at server start (setupCopilotModeWithFallback): Copilot is
+    // optional while other providers are enabled, so its failure, such as a
+    // GitHub account with locked billing, must not fail a reload made for them.
+    const fallbackProviders = listEnabledProviders()
+    if (fallbackProviders.length === 0) throw error
+    consola.warn(
+      `GitHub Copilot setup failed (${state.copilotSetupError}). Continuing with enabled providers: ${fallbackProviders.join(", ")}`,
+    )
+    return
+  }
+  state.copilotSetupError = undefined
   consola.debug("Config reload: Copilot runtime initialized")
 }
 

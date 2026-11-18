@@ -9,6 +9,13 @@ import {
   handleCodexModelsProxy,
   isCodexUserAgent,
 } from "~/routes/models/codex-models"
+import {
+  ChatGPTWebError,
+  createChatGPTWebErrorResponse,
+} from "~/services/chatgpt/errors"
+import { getChatGPTWebModels } from "~/services/chatgpt/models"
+import { getWebAdapter } from "~/services/web/registry"
+import { sessionInputFromConfig } from "~/services/web/types"
 import { getModels as getCodexModels } from "~/services/codex/get-models"
 import {
   createProviderProxyResponse,
@@ -35,6 +42,40 @@ providerModelRoutes.get("/", async (c) => {
         },
         404,
       )
+    }
+
+    if (providerConfig.type === "chatgpt") {
+      return c.json({
+        object: "list",
+        data: (await getChatGPTWebModels(providerConfig)).map((model) =>
+          withModelDisplayName(model, providerConfig.name),
+        ),
+        has_more: false,
+      })
+    }
+
+    if (providerConfig.type === "web") {
+      const adapter = getWebAdapter(providerConfig.webAdapter)
+      if (!adapter) {
+        return c.json(
+          {
+            error: {
+              message: `Provider '${provider}' has no known web adapter '${providerConfig.webAdapter ?? ""}'`,
+              type: "invalid_request_error",
+            },
+          },
+          400,
+        )
+      }
+      return c.json({
+        object: "list",
+        data: (
+          await adapter.listModels(sessionInputFromConfig(providerConfig), {
+            signal: c.req.raw.signal,
+          })
+        ).map((model) => withModelDisplayName(model, providerConfig.name)),
+        has_more: false,
+      })
     }
 
     if (providerConfig.name === "codex") {
@@ -121,6 +162,9 @@ providerModelRoutes.get("/", async (c) => {
       provider,
       error,
     })
+    if (error instanceof ChatGPTWebError) {
+      return createChatGPTWebErrorResponse(error)
+    }
     return await forwardError(c, error)
   }
 })

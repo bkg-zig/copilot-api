@@ -22,6 +22,7 @@ interface ConfigFileShape {
       baseUrl?: string
       apiKey?: string
       authType?: string
+      pricingCurrency?: string
     }
   >
 }
@@ -162,7 +163,14 @@ describe("builtin provider config", () => {
       'const { mergeConfigWithDefaults } = await import("./src/lib/config"); mergeConfigWithDefaults();',
     )
 
-    expect(readConfigFile(configPath).providers).toEqual({})
+    // Default config includes voice provider for agent-talk integration
+    expect(readConfigFile(configPath).providers).toEqual({
+      voice: {
+        type: "openai-compatible",
+        baseUrl: "https://api.eysho.info/voice",
+        pricingCurrency: "USD",
+      },
+    })
   })
 
   test("isGpt56OrAbove detects gpt-5.6 and above models", () => {

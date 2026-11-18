@@ -10,6 +10,8 @@ interface AuthMiddlewareOptions {
   allowOptionsBypass?: boolean
   allowWhenNoApiKeys?: boolean
   shouldSkipPath?: (path: string) => boolean
+  /** Accepts a request without an API key, e.g. via a login session cookie. */
+  isAuthorizedBySession?: (c: Context) => boolean | Promise<boolean>
 }
 
 export function normalizeApiKeys(apiKeys: unknown): Array<string> {
@@ -107,6 +109,7 @@ export function createAuthMiddleware(
   const allowOptionsBypass = options.allowOptionsBypass ?? true
   const allowWhenNoApiKeys = options.allowWhenNoApiKeys ?? true
   const shouldSkipPath = options.shouldSkipPath ?? (() => false)
+  const isAuthorizedBySession = options.isAuthorizedBySession ?? (() => false)
 
   return async (c, next) => {
     if (allowOptionsBypass && c.req.method === "OPTIONS") {
@@ -118,6 +121,10 @@ export function createAuthMiddleware(
     }
 
     if (allowUnauthenticatedPaths.includes(c.req.path)) {
+      return next()
+    }
+
+    if (await isAuthorizedBySession(c)) {
       return next()
     }
 

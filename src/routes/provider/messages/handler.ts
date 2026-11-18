@@ -143,7 +143,8 @@ export async function handleProviderMessagesForProvider(
       })
     }
 
-    if (effectiveType === "openai-compatible") {
+    // ChatGPT web answers in Chat Completions format (services/chatgpt).
+    if (effectiveType === "openai-compatible" || effectiveType === "chatgpt") {
       stripWebSearchServerTool(payload)
 
       return await handleOpenAICompatibleProviderMessages(c, {

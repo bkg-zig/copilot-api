@@ -367,6 +367,21 @@ export const streamOpenAICompatibleProviderMessages = ({
           continue
         }
 
+        // Fehler-Chunk des Upstreams (kein "choices"-Feld): nicht als leere
+        // Antwort verschlucken, sondern als Anthropic-Fehler durchreichen.
+        const upstreamError = (parsed as { error?: { message?: string } }).error
+        if (upstreamError) {
+          logger.warn("provider.messages.openai_compatible.upstream_error:", {
+            provider,
+            error: upstreamError,
+          })
+          await writeSSEIfConnected(stream, {
+            event: "error",
+            data: JSON.stringify(translateErrorToAnthropicErrorEvent()),
+          })
+          break
+        }
+
         if (parsed.usage) {
           usage = normalizeOpenAIUsage(parsed.usage)
         }

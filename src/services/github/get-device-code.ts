@@ -1,7 +1,9 @@
 import { getOauthAppConfig, getOauthUrls } from "~/lib/api-config"
 import { HTTPError } from "~/lib/error"
 
-export async function getDeviceCode(): Promise<DeviceCodeResponse> {
+export async function getDeviceCode(
+  signal?: AbortSignal,
+): Promise<DeviceCodeResponse> {
   const { clientId, headers, scope } = getOauthAppConfig()
   const { deviceCodeUrl } = getOauthUrls()
 
@@ -12,6 +14,7 @@ export async function getDeviceCode(): Promise<DeviceCodeResponse> {
       client_id: clientId,
       scope,
     }),
+    signal,
   })
 
   if (!response.ok) throw new HTTPError("Failed to get device code", response)

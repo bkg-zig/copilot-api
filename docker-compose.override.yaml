@@ -1,0 +1,50 @@
+# Local build override: build the gateway from this checkout instead of pulling
+# the published ghcr.io image. Keeps docker-compose.yaml (and the data-dir /
+# SQLite settings in it) untouched.
+#
+# The gateway also joins the external `gitspit_frontend` network so the Caddy
+# reverse proxy (gitspit-web-proxy) can reach it at http://copilot-api:4141 and
+# publish it as https://api.gitspit.com.
+#
+# Build + run:
+#   docker compose build
+#   docker compose up -d
+services:
+  data-init:
+    image: copilot-api-local:latest
+    pull_policy: build
+    build:
+      context: .
+      dockerfile: Dockerfile
+  copilot-api:
+    image: copilot-api-local:latest
+    pull_policy: build
+    build:
+      context: .
+      dockerfile: Dockerfile
+    networks:
+      - default
+      - gitspit_frontend
+    # Dashboard sign-in by email through bkg-mailsystem (submission port on
+    # the host). The password file is mounted read-only, never copied.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      COPILOT_API_ADMIN_EMAIL: bkg@gitspit.com
+      COPILOT_API_PUBLIC_URL: https://api.gitspit.com
+      COPILOT_API_ALLOWED_ORIGINS: https://api.gitspit.com
+      COPILOT_API_SMTP_HOST: host.docker.internal
+      COPILOT_API_SMTP_PORT: "2587"
+      COPILOT_API_SMTP_TLS_SERVERNAME: mail.gitspit.com
+      COPILOT_API_SMTP_USER: agents@gitspit.com
+      COPILOT_API_SMTP_FROM: "Copilot API <agents@gitspit.com>"
+      COPILOT_API_SMTP_PASSWORD_FILE: /run/secrets/smtp_password
+    volumes:
+      - type: bind
+        source: /srv/bkg/secrets/mailsystem/mail_password
+        target: /run/secrets/smtp_password
+        read_only: true
+
+networks:
+  gitspit_frontend:
+    external: true

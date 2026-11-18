@@ -13,7 +13,11 @@ import { requestEventsMiddleware } from "./lib/request-events"
 import { alphaSearchRoutes } from "./routes/alpha-search/route"
 import { completionRoutes } from "./routes/chat-completions/route"
 import { configRoutes } from "./routes/admin/config/route"
+import { authRoutes, getRequestSession } from "./routes/auth/route"
+import { diagnosticsRoutes } from "./routes/admin/diagnostics/route"
+import { webAdminRoutes } from "./routes/admin/web/route"
 import { embeddingRoutes } from "./routes/embeddings/route"
+import { healthRoutes } from "./routes/health/route"
 import { imageRoutes } from "./routes/images/route"
 import { messageRoutes } from "./routes/messages/route"
 import { modelRoutes } from "./routes/models/route"
@@ -31,6 +35,7 @@ export interface CreateServerOptions {
   getApiKeys?: () => Array<string>
   port?: number
   plugins?: GatewayPlugins
+  allowedOrigins?: string[]
 }
 
 function resolveSameOriginCorsOrigin(
@@ -51,18 +56,45 @@ function resolveSameOriginCorsOrigin(
 export function createServer(options: CreateServerOptions = {}): Hono {
   const server = new Hono()
   const networkExposed = options.networkExposed ?? false
+  const allowedOrigins = options.allowedOrigins ?? []
 
   server.use(traceIdMiddleware)
   server.use(logger())
   server.use(
-    networkExposed ? cors({ origin: resolveSameOriginCorsOrigin }) : cors(),
+    allowedOrigins.length > 0 ?
+      cors({
+        // Explicit allowlist (COPILOT_API_ALLOWED_ORIGINS).
+        origin: (origin) =>
+          origin && allowedOrigins.includes(origin) ? origin : null,
+        credentials: true,
+        allowHeaders: [
+          "Content-Type",
+          "Authorization",
+          "x-api-key",
+          "x-requested-with",
+        ],
+        allowMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
+        exposeHeaders: ["x-trace-id"],
+        maxAge: 86400,
+      })
+    : networkExposed ? cors({ origin: resolveSameOriginCorsOrigin })
+    : cors(),
   )
   server.use(
     "*",
     createAuthMiddleware({
       getApiKeys: options.getApiKeys,
-      allowUnauthenticatedPaths: ["/", "/usage-viewer", "/usage-viewer/"],
-      shouldSkipPath: (path) => path.startsWith("/admin/"),
+      allowUnauthenticatedPaths: [
+        "/",
+        "/health",
+        "/v1/health",
+        "/usage-viewer",
+        "/usage-viewer/",
+        "/favicon.ico",
+      ],
+      shouldSkipPath: (path) =>
+        path.startsWith("/admin/") || path.startsWith("/auth/"),
+      isAuthorizedBySession: async (c) => (await getRequestSession(c)) !== null,
       allowWhenNoApiKeys: !networkExposed,
     }),
   )
@@ -71,6 +103,8 @@ export function createServer(options: CreateServerOptions = {}): Hono {
     createAuthMiddleware({
       getApiKeys: getConfiguredAdminApiKeys,
       allowUnauthenticatedPaths: [],
+      isAuthorizedBySession: async (c) =>
+        (await getRequestSession(c))?.role === "admin",
       allowWhenNoApiKeys: false,
     }),
   )
@@ -80,15 +114,33 @@ export function createServer(options: CreateServerOptions = {}): Hono {
     requestEventsMiddleware(options.plugins, options.port ?? 4141),
   )
 
-  server.get("/", (c) => c.text("Server running"))
+  server.get("/", (c) => {
+    const usageViewerFileUrl = new URL("../pages/index.html", import.meta.url)
+    c.header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
+    c.header("Pragma", "no-cache")
+    return c.html(readFileSync(usageViewerFileUrl, "utf8"))
+  })
+  server.get("/favicon.ico", (c) =>
+    c.redirect(
+      "https://cdn.jsdelivr.net/npm/@iconify/json@1.1.600/logos/github-copilot.svg",
+      302,
+    ),
+  )
   server.get("/usage-viewer", (c) => {
     const usageViewerFileUrl = new URL("../pages/index.html", import.meta.url)
+    c.header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
+    c.header("Pragma", "no-cache")
     return c.html(readFileSync(usageViewerFileUrl, "utf8"))
   })
   server.get("/usage-viewer/", (c) => c.redirect("/usage-viewer", 301))
 
+  server.route("/health", healthRoutes)
+  server.route("/v1/health", healthRoutes)
   server.route("/chat/completions", completionRoutes)
   server.route("/admin/config", configRoutes)
+  server.route("/admin/diagnostics", diagnosticsRoutes)
+  server.route("/admin/web", webAdminRoutes)
+  server.route("/auth", authRoutes)
   server.route("/models", modelRoutes)
   server.route("/embeddings", embeddingRoutes)
   server.route("/usage", usageRoute)

@@ -4,11 +4,15 @@ import path from "node:path"
 import { setTimeout as delay } from "node:timers/promises"
 
 import type { CodexCredentials } from "~/lib/oauth/codex"
+import type { CodexAccountCapabilities } from "~/lib/codex-capabilities"
 
 import { writeFileAtomically } from "./atomic-file"
 import { PATHS } from "./paths"
 
-export const MAX_CODEX_ACCOUNTS = 3
+/** Maximum OAuth accounts retained per provider credential store. */
+export const MAX_OAUTH_ACCOUNTS = 10
+/** Backward-compatible name used by Codex callers and older integrations. */
+export const MAX_CODEX_ACCOUNTS = MAX_OAUTH_ACCOUNTS
 
 const CODEX_CREDENTIAL_LOCK_RETRY_MS = 10
 const CODEX_CREDENTIAL_LOCK_TIMEOUT_MS = 10_000
@@ -16,6 +20,8 @@ const CODEX_CREDENTIAL_LOCK_STALE_MS = 60_000
 
 export interface CodexStoredAccount extends CodexCredentials {
   alias?: string
+  capabilities?: CodexAccountCapabilities
+  capabilitiesUpdatedAt?: number
 }
 
 export interface CodexCredentialStoreV1 {
@@ -29,6 +35,8 @@ export interface WriteCodexCredentialsOptions {
   insertIfMissing?: boolean
   // A refresh must not overwrite credentials from a newer sign-in.
   expectedRefreshToken?: string
+  // Account capabilities (probed from ChatGPT/Codex backend)
+  capabilities?: CodexAccountCapabilities
 }
 
 interface CodexCredentialLockMetadata {
@@ -314,9 +322,32 @@ function normalizeCodexStoredAccount(
   }
 
   const alias = aliasValue?.trim()
+
+  // Parse capabilities if present
+  const capsValue = (account as { capabilities?: unknown }).capabilities
+  let capabilities: CodexAccountCapabilities | undefined
+  if (capsValue && typeof capsValue === "object") {
+    const c = capsValue as Partial<CodexAccountCapabilities>
+    capabilities = {
+      solAvailable: c.solAvailable ?? false,
+      extraHighAvailable: c.extraHighAvailable ?? false,
+      proAvailable: c.proAvailable ?? false,
+      experimentalBiggerContext: c.experimentalBiggerContext ?? false,
+      browserInteractionMode: c.browserInteractionMode ?? "automatic",
+      zeroRiskProEnabled: c.zeroRiskProEnabled ?? false,
+    }
+  }
+
+  const capsUpdatedAtValue = (account as { capabilitiesUpdatedAt?: unknown })
+    .capabilitiesUpdatedAt
+  const capabilitiesUpdatedAt =
+    typeof capsUpdatedAtValue === "number" ? capsUpdatedAtValue : undefined
+
   return {
     ...credentials,
     ...(alias ? { alias } : {}),
+    ...(capabilities ? { capabilities } : {}),
+    ...(capabilitiesUpdatedAt ? { capabilitiesUpdatedAt } : {}),
   }
 }
 
@@ -455,7 +486,7 @@ export function createOAuthCredentialStore(
 
   async function readCredentials(
     accountId?: string,
-  ): Promise<CodexCredentials | null> {
+  ): Promise<CodexStoredAccount | null> {
     const store = await readStore()
     if (!store || store.accounts.length === 0) {
       return null
@@ -585,6 +616,17 @@ export function createOAuthCredentialStore(
         ...(alias ? { alias }
         : existingAccount?.alias ? { alias: existingAccount.alias }
         : {}),
+        ...(options.capabilities ?
+          {
+            capabilities: options.capabilities,
+            capabilitiesUpdatedAt: Date.now(),
+          }
+        : existingAccount?.capabilities ?
+          {
+            capabilities: existingAccount.capabilities,
+            capabilitiesUpdatedAt: existingAccount.capabilitiesUpdatedAt,
+          }
+        : {}),
       }
       const accounts = [...store.accounts]
       if (existingIndex >= 0) {
@@ -644,6 +686,45 @@ export const readCodexCredentialStore = codexCredentialStore.readStore
 export const readCodexCredentials = codexCredentialStore.readCredentials
 export const writeCodexCredentials = codexCredentialStore.writeCredentials
 export const removeCodexCredentials = codexCredentialStore.removeCredentials
+
+/**
+ * Update account capabilities without changing credentials.
+ */
+export async function updateCodexAccountCapabilities(
+  accountId: string,
+  capabilities: CodexAccountCapabilities,
+): Promise<CodexStoredAccount | null> {
+  const normalizedAccountId = accountId.trim()
+  if (!normalizedAccountId) {
+    throw new Error("Codex account id must be a non-empty string")
+  }
+
+  return await withCredentialFileLock(PATHS.CODEX_CREDENTIAL_PATH, async () => {
+    const store = await readCodexCredentialStore()
+    const index =
+      store?.accounts.findIndex(
+        (account) => account.accountId === normalizedAccountId,
+      ) ?? -1
+    if (!store || index < 0) {
+      return null
+    }
+
+    const updatedAccount: CodexStoredAccount = {
+      ...store.accounts[index],
+      capabilities,
+      capabilitiesUpdatedAt: Date.now(),
+    }
+    const accounts = [...store.accounts]
+    accounts[index] = updatedAccount
+
+    await writeCodexCredentialStoreUnlocked(
+      { version: 1, accounts },
+      PATHS.CODEX_CREDENTIAL_PATH,
+    )
+
+    return updatedAccount
+  })
+}
 
 export async function clearCodexCredentials(): Promise<void> {
   await withCodexCredentialLock(() =>

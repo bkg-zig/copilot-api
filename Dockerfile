@@ -12,6 +12,8 @@ RUN bun run build
 FROM oven/bun:1.4.4-alpine AS runner
 WORKDIR /app
 
+# The Claude subscription sign-in is implemented by the gateway itself, so no
+# Claude Code CLI and no Node.js runtime are installed in the image.
 ENV NODE_ENV=production \
     NODE_USE_SYSTEM_CA=1 \
     COPILOT_API_HOME=/data

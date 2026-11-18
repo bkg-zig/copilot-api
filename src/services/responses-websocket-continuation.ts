@@ -67,10 +67,12 @@ export async function* createContinuableResponsesWebSocketStream<
     for await (const chunk of source) {
       const event = parseEvent(chunk)
       if (
-        attempt?.usedPrevious
-        && !responseStarted
+        !responseStarted
         && !forceFull
         && isPreviousResponseMiss(event)
+        && Array.isArray(request.payload.input)
+        && (attempt?.usedPrevious
+          || typeof request.payload.previous_response_id === "string")
         && !clientSignal?.aborted
       ) {
         retry = true

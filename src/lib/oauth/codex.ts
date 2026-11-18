@@ -11,6 +11,9 @@ const CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann"
 const AUTHORIZE_URL = "https://auth.openai.com/oauth/authorize"
 const TOKEN_URL = "https://auth.openai.com/oauth/token"
 const REDIRECT_URI = `http://localhost:${CALLBACK_PORT}${CALLBACK_PATH}`
+/** The only redirect URI registered for the Codex OAuth client. */
+export const CODEX_REDIRECT_URI = REDIRECT_URI
+export const CODEX_CLIENT_ID = CLIENT_ID
 const SCOPE = "openid profile email offline_access"
 const JWT_CLAIM_PATH = "https://api.openai.com/auth"
 const REFRESH_BUFFER_MS = 60_000
@@ -87,7 +90,7 @@ function createState(): string {
   return randomBytes(16).toString("hex")
 }
 
-function parseAuthorizationInput(input: string): {
+export function parseAuthorizationInput(input: string): {
   code?: string
   state?: string
 } {
@@ -226,6 +229,20 @@ async function exchangeAuthorizationCode(
   verifier: string,
   signal?: AbortSignal,
 ): Promise<TokenSuccessResult> {
+  return exchangeAuthorizationCodeWithRedirect(
+    code,
+    verifier,
+    REDIRECT_URI,
+    signal,
+  )
+}
+
+export async function exchangeAuthorizationCodeWithRedirect(
+  code: string,
+  verifier: string,
+  redirectUri: string,
+  signal?: AbortSignal,
+): Promise<TokenSuccessResult> {
   const response = await fetch(TOKEN_URL, {
     method: "POST",
     headers: {
@@ -236,7 +253,7 @@ async function exchangeAuthorizationCode(
       client_id: CLIENT_ID,
       code,
       code_verifier: verifier,
-      redirect_uri: REDIRECT_URI,
+      redirect_uri: redirectUri,
     }),
     signal,
   })
@@ -439,6 +456,26 @@ async function waitForAuthorizationCode(
   }
 }
 
+export async function createCodexAuthUrl(
+  redirectUri: string = REDIRECT_URI,
+): Promise<{ url: string; state: string; verifier: string }> {
+  const { verifier, challenge } = await generatePkce()
+  const state = createState()
+  const url = new URL(AUTHORIZE_URL)
+  url.searchParams.set("response_type", "code")
+  url.searchParams.set("client_id", CLIENT_ID)
+  url.searchParams.set("redirect_uri", redirectUri)
+  url.searchParams.set("scope", SCOPE)
+  url.searchParams.set("code_challenge", challenge)
+  url.searchParams.set("code_challenge_method", "S256")
+  url.searchParams.set("state", state)
+  url.searchParams.set("id_token_add_organizations", "true")
+  url.searchParams.set("codex_cli_simplified_flow", "true")
+  url.searchParams.set("originator", "copilot-api")
+
+  return { verifier, state, url: url.toString() }
+}
+
 export async function loginCodex(
   options: LoginCodexOptions,
 ): Promise<CodexCredentials> {
@@ -481,6 +518,38 @@ export async function loginCodex(
   const tokenResult = await exchangeAuthorizationCode(
     code,
     verifier,
+    options.signal,
+  )
+  options.signal?.throwIfAborted()
+  const accountId = getAccountId(tokenResult.accessToken)
+  if (!accountId) {
+    throw new Error("Failed to extract Codex account id from access token")
+  }
+
+  return {
+    accessToken: tokenResult.accessToken,
+    refreshToken: tokenResult.refreshToken,
+    expiresAt: tokenResult.expiresAt,
+    accountId,
+  }
+}
+
+export interface CompleteCodexAuthOptions {
+  code: string
+  state: string
+  verifier: string
+  redirectUri: string
+  signal?: AbortSignal
+}
+
+export async function completeCodexAuth(
+  options: CompleteCodexAuthOptions,
+): Promise<CodexCredentials> {
+  options.signal?.throwIfAborted()
+  const tokenResult = await exchangeAuthorizationCodeWithRedirect(
+    options.code,
+    options.verifier,
+    options.redirectUri,
     options.signal,
   )
   options.signal?.throwIfAborted()

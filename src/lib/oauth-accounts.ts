@@ -4,6 +4,7 @@ import {
   withCredentialFileLock,
 } from "~/lib/credential-store"
 import type { OAuthAccountSummary, OAuthCredentials } from "~/lib/types/oauth"
+import type { CodexAccountCapabilities } from "~/lib/codex-capabilities"
 
 export function createOAuthAccountManager(options: {
   provider: string
@@ -23,12 +24,23 @@ export function createOAuthAccountManager(options: {
     ]?.accountId?.trim()
     || (accounts.length === 1 ? accounts[0].accountId : undefined)
   const summarize = (
-    account: { accountId: string; alias?: string },
+    account: {
+      accountId: string
+      alias?: string
+      capabilities?: CodexAccountCapabilities
+      capabilitiesUpdatedAt?: number
+    },
     active: boolean,
   ): OAuthAccountSummary => ({
     accountId: account.accountId,
     ...(account.alias ? { alias: account.alias } : {}),
     active,
+    ...(account.capabilities ?
+      {
+        capabilities: account.capabilities,
+        capabilitiesUpdatedAt: account.capabilitiesUpdatedAt,
+      }
+    : {}),
   })
 
   async function findAccount(selector: string) {
@@ -75,6 +87,31 @@ export function createOAuthAccountManager(options: {
           )
         const removed = await store.removeCredentials(account.accountId)
         return summarize(removed, false)
+      }),
+    rename: (selector: string, alias: string) =>
+      withMutationLock(async () => {
+        const normalizedAlias = alias.trim()
+        const hasControlChars = [...normalizedAlias].some(
+          (ch) => ch.charCodeAt(0) <= 0x1f || ch.charCodeAt(0) === 0x7f,
+        )
+        if (
+          !normalizedAlias
+          || normalizedAlias.length > 64
+          || hasControlChars
+        ) {
+          throw new Error(
+            `${options.label} account name must be 1-64 characters without control characters`,
+          )
+        }
+        const { account, accounts } = await findAccount(selector)
+        await store.writeCredentials(account, {
+          alias: normalizedAlias,
+          insertIfMissing: false,
+        })
+        return summarize(
+          { ...account, alias: normalizedAlias },
+          account.accountId === activeId(accounts),
+        )
       }),
   }
 }

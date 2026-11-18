@@ -4,7 +4,9 @@ import type { Context } from "hono"
 import { streamSSE, type SSEMessage } from "hono/streaming"
 
 import { guardChatCompletionsStream } from "~/lib/chat-completions-stream"
-import { resolveMappedModel } from "~/lib/config"
+import { resolveComboModel, resolveMappedModel } from "~/lib/config"
+import { runComboFailover } from "~/lib/combo"
+import { resolveRoutedModel } from "~/lib/router"
 import { recordChatCompletionFirstToken } from "~/lib/first-token"
 import { createHandlerLogger, debugJson } from "~/lib/logger"
 import { findEndpointModel } from "~/lib/models"
@@ -32,10 +34,31 @@ export const chatCompletionsHandlerDependencies = {
 }
 
 export async function handleCompletion(c: Context) {
-  let payload = await c.req.json<ChatCompletionsPayload>()
+  const payload = await c.req.json<ChatCompletionsPayload>()
   setPluginRequestModel(payload.model)
+  return await dispatchChatCompletion(c, payload)
+}
+
+async function dispatchChatCompletion(
+  c: Context,
+  payload: ChatCompletionsPayload,
+): Promise<Response> {
+  const comboTargets = resolveComboModel(payload.model)
+  if (comboTargets && comboTargets.length > 0) {
+    return await runComboFailover({
+      comboModel: payload.model,
+      targets: comboTargets,
+      logger,
+      run: (targetModel) =>
+        dispatchChatCompletion(c, {
+          ...structuredClone(payload),
+          model: targetModel,
+        }),
+    })
+  }
+
   const requestedModel = payload.model
-  payload.model = resolveMappedModel(payload.model)
+  payload.model = resolveMappedModel(resolveRoutedModel(payload.model, payload))
   if (payload.model !== requestedModel) {
     consola.debug(
       `Resolved model mapping: ${requestedModel} -> ${payload.model}`,

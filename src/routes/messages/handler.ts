@@ -8,9 +8,12 @@ import {
   getClaudeAutoModel,
   getSmallModel,
   isMessagesApiEnabled,
+  resolveComboModel,
   resolveMappedModel,
+  resolveRoutedModel,
 } from "~/lib/config"
 import { createHandlerLogger, debugJson } from "~/lib/logger"
+import { runComboFailover } from "~/lib/combo"
 import { fromClaudeDiscoveryModelId } from "~/lib/claude-models"
 import { findEndpointModel } from "~/lib/models"
 import { resolveConfiguredProviderModelAlias } from "~/lib/provider-resolver"
@@ -28,6 +31,8 @@ import {
   providerMessagesHandlerDependencies,
 } from "~/routes/provider/messages/handler"
 import { getResponsesTransportForModel } from "~/routes/responses/utils"
+import { isGitHubCopilotEnabled } from "~/lib/github-copilot-provider"
+import { HTTPError } from "~/lib/error"
 
 import type { AnthropicMessagesPayload } from "~/lib/types/anthropic"
 import {
@@ -71,6 +76,7 @@ export interface CompletionPayloadOptions {
   compactType?: ReturnType<typeof getCompactType>
   skipClaudeAutoModel?: boolean
   skipModelMapping?: boolean
+  skipCombo?: boolean
   skipWebSearch?: boolean
   usageEndpoint?: TokenUsageEndpoint
   subagentMarker?: SubagentMarker | null
@@ -82,10 +88,30 @@ export async function handleCompletionPayload(
   c: Context,
   anthropicPayload: AnthropicMessagesPayload,
   dispatchOptions: CompletionPayloadOptions = {},
-) {
+): Promise<Response> {
+  if (!dispatchOptions.skipCombo) {
+    const comboModel = anthropicPayload.model
+    const comboTargets = resolveComboModel(comboModel)
+    if (comboTargets && comboTargets.length > 0) {
+      return await runComboFailover({
+        comboModel,
+        targets: comboTargets,
+        logger,
+        run: (targetModel) =>
+          handleCompletionPayload(
+            c,
+            { ...structuredClone(anthropicPayload), model: targetModel },
+            { ...dispatchOptions, skipCombo: true },
+          ),
+      })
+    }
+  }
+
   const requestedModel = anthropicPayload.model
   if (!dispatchOptions.skipModelMapping) {
-    anthropicPayload.model = resolveMappedModel(anthropicPayload.model)
+    anthropicPayload.model = resolveMappedModel(
+      resolveRoutedModel(anthropicPayload.model, anthropicPayload),
+    )
   }
   if (anthropicPayload.model !== requestedModel) {
     consola.debug(
@@ -235,6 +261,22 @@ export async function handleCompletionPayload(
         logger,
         usageEndpoint: dispatchOptions.usageEndpoint,
       },
+    )
+  }
+
+  if (!isGitHubCopilotEnabled()) {
+    throw new HTTPError(
+      "No provider available for the requested model. GitHub Copilot is disabled.",
+      c.json(
+        {
+          error: {
+            message:
+              "No provider available for the requested model. GitHub Copilot is disabled.",
+            type: "provider_disabled",
+          },
+        },
+        { status: 403 },
+      ),
     )
   }
 

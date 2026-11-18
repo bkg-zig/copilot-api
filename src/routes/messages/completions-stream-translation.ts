@@ -27,7 +27,12 @@ export function translateChunkToAnthropicEvents(
 ): Array<AnthropicStreamEventData> {
   const events: Array<AnthropicStreamEventData> = []
 
-  if (chunk.choices.length === 0) {
+  // Fehler-Chunks des Upstreams (z. B. WAF/Proxy) haben kein "choices"-Feld.
+  // Ohne diese Prüfung stürzt die Übersetzung mit "undefined is not an object
+  // (evaluating 'chunk.choices.length')" ab und der Stream bricht hart ab.
+  const choices = Array.isArray(chunk.choices) ? chunk.choices : []
+
+  if (choices.length === 0) {
     // Empty-choices chunks without usage are metadata-only events (e.g.
     // inference cost) that may arrive before the final usage chunk. Only
     // complete the pending message when usage is present; otherwise wait
@@ -38,7 +43,7 @@ export function translateChunkToAnthropicEvents(
     return events
   }
 
-  const choice = chunk.choices[0]
+  const choice = choices[0]
   const { delta } = choice
 
   handleMessageStart(state, events, chunk)

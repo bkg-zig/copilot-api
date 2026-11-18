@@ -5,6 +5,9 @@ import {
   getBuiltinProviderModelRecords,
 } from "~/lib/builtin-provider-models"
 import {
+  defaultConfig,
+  getAllCombos,
+  getModelMappings,
   getRawProviderConfig,
   listEnabledProviders,
   type ProviderConfig,
@@ -26,8 +29,10 @@ import {
 } from "~/lib/provider-model-catalog"
 import { resolveProviderConfig } from "~/lib/provider-resolver"
 import { getProviderAgentModels } from "~/lib/provider-management"
+import { getRouterAlias, getRouterConfig } from "~/lib/router"
 import { state } from "~/lib/state"
 import type { Model } from "~/lib/types/models"
+import { getChatGPTWebModels } from "~/services/chatgpt/models"
 import { getModels as getCodexModels } from "~/services/codex/get-models"
 import { forwardProviderModels } from "~/services/providers/provider-proxy"
 
@@ -221,6 +226,22 @@ export async function getProviderModelRecords(
     providerConfig,
   )
   if (localModels !== undefined) return localModels
+  if (providerConfig.type === "chatgpt") {
+    // The web catalog depends on the signed-in account and plan.
+    try {
+      return (await getChatGPTWebModels(providerConfig)).map(
+        (model) =>
+          normalizeModelCapabilities(model) as unknown as Record<
+            string,
+            unknown
+          >,
+      )
+    } catch (error) {
+      return getFallbackProviderModelRecords(providerConfig.name, "error", {
+        error,
+      })
+    }
+  }
 
   try {
     const response = await forwardProviderModels(providerConfig, requestHeaders)
@@ -402,8 +423,14 @@ export async function getAggregatedModels(
     ),
   )
 
+  const virtualModels = getVirtualModels()
   return deduplicateModels(
-    [...copilotModels, ...copilotImages, ...providerModelsByProvider.flat()],
+    [
+      ...virtualModels,
+      ...copilotModels,
+      ...copilotImages,
+      ...providerModelsByProvider.flat(),
+    ],
     (model) => model.id,
   )
 }
@@ -430,15 +457,143 @@ function selectAgentProviderModels(
   return selection.map((id) => modelsById.get(id) ?? { id })
 }
 
+/**
+ * Synthetic catalog entry for the prompt-aware router alias (default `auto`).
+ * The gateway resolves this id to a concrete model per request, so clients can
+ * select it like any other model in Claude, OpenCode and the Admin UI.
+ */
+export function getRouterAliasModel(): ClientModel | null {
+  const config = getRouterConfig()
+  if (config.enabled !== true) return null
+  const alias = getRouterAlias(config)
+  if (!alias) return null
+  const candidates = (config.pool ?? []).filter(
+    (model): model is string =>
+      typeof model === "string" && model.trim().length > 0,
+  ).length
+  return createVirtualModel(
+    alias,
+    candidates > 0 ?
+      `Router (${alias}) - ${candidates} models`
+    : `Router (${alias})`,
+    "router",
+  )
+}
+
+function createVirtualModel(
+  id: string,
+  displayName: string,
+  ownedBy: string,
+): ClientModel {
+  return {
+    id,
+    object: "model",
+    type: "model",
+    created: 0,
+    created_at: EPOCH_ISO,
+    owned_by: ownedBy,
+    display_name: displayName,
+    claude_model_id: id,
+    context_window: 200_000,
+    max_output_tokens: 32_000,
+    input_modalities: ["text"],
+    output_modalities: ["text"],
+  }
+}
+
+/**
+ * Virtual model entries that are resolvable by the request handlers but are
+ * not tied to a single upstream provider: the router alias and every
+ * configured model mapping (virtual name -> real model) whose target points at
+ * an enabled provider.
+ */
+export function getVirtualModels(): Array<ClientModel> {
+  const entries: Array<ClientModel> = []
+  const seen = new Set<string>()
+  const routerModel = getRouterAliasModel()
+  if (routerModel) {
+    entries.push(routerModel)
+    seen.add(routerModel.id)
+  }
+  const alias = getRouterAlias(getRouterConfig())
+  const enabledProviders = new Set(listEnabledProviders())
+  for (const [source, target] of Object.entries(getModelMappings())) {
+    const id = source.trim()
+    const targetId = target.trim()
+    if (
+      !id
+      || seen.has(id)
+      // Built-in aliases (e.g. codex-auto-review) are already listed by their
+      // provider's own catalog, with that provider's availability rules.
+      || defaultConfig.modelMappings?.[id] === targetId
+      || !isResolvableMappingTarget(targetId, enabledProviders, alias)
+    ) {
+      continue
+    }
+    seen.add(id)
+    entries.push(
+      createVirtualModel(id, `Virtual (${id}) -> ${targetId}`, "virtual"),
+    )
+  }
+
+  for (const [name, combo] of Object.entries(getAllCombos())) {
+    if (combo.enabled === false) continue
+    const id = `combo/${name}`.trim()
+    if (!id || seen.has(id)) continue
+    if (
+      !combo.targets.some((target) =>
+        isResolvableMappingTarget(
+          `${target.provider}/${target.model}`,
+          enabledProviders,
+          alias,
+        ),
+      )
+    ) {
+      continue
+    }
+    seen.add(id)
+    entries.push(
+      createVirtualModel(
+        id,
+        combo.displayName ?? `Combo (${name}) - ${combo.targets.length} models`,
+        "combo",
+      ),
+    )
+  }
+  return entries
+}
+
+const COPILOT_TARGET_PROVIDERS = new Set(["copilot", "github-copilot"])
+
+function isResolvableMappingTarget(
+  target: string,
+  enabledProviders: ReadonlySet<string>,
+  alias: string,
+): boolean {
+  if (!target) return false
+  if (target === alias) return true
+  const separator = target.indexOf("/")
+  // A bare id is assumed to be a Copilot/catalog model the gateway can serve.
+  if (separator < 0) return true
+  const provider = target.slice(0, separator)
+  return (
+    enabledProviders.has(provider) || COPILOT_TARGET_PROVIDERS.has(provider)
+  )
+}
+
 export async function getAgentModels(
   requestHeaders: Headers,
   options: { includeImageModels?: boolean } = {},
 ): Promise<Array<ClientModel>> {
-  return getAggregatedModels(requestHeaders, {
+  const models = await getAggregatedModels(requestHeaders, {
     includeImageModels: options.includeImageModels,
     selectCopilotModels: selectAgentCopilotModels,
     selectProviderModels: selectAgentProviderModels,
   })
+  const virtual = getVirtualModels()
+  if (virtual.length === 0) return models
+  const existing = new Set(models.map((model) => model.id))
+  return [...virtual.filter((model) => !existing.has(model.id)), ...models]
 }
 
 export function createModelListResponse(

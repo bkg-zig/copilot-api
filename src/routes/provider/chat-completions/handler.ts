@@ -51,7 +51,12 @@ export async function handleProviderChatCompletionsForProvider(
   const providerConfig =
     configuredProvider
     && resolveProviderConfigForModel(configuredProvider, payload.model)
-  if (!providerConfig || providerConfig.type !== "openai-compatible") {
+  if (
+    !providerConfig
+    || (providerConfig.type !== "openai-compatible"
+      && providerConfig.type !== "chatgpt"
+      && providerConfig.type !== "web")
+  ) {
     return c.json(
       {
         error: {

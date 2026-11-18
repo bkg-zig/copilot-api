@@ -17,9 +17,11 @@ import {
   writeGitHubToken,
 } from "~/lib/credential-store"
 import { PATHS } from "~/lib/paths"
+import { createOAuthAccountManager } from "~/lib/oauth-accounts"
 
 const originalGitHubTokenPath = PATHS.GITHUB_TOKEN_PATH
 const originalCodexCredentialPath = PATHS.CODEX_CREDENTIAL_PATH
+const originalConfigPath = PATHS.CONFIG_PATH
 const originalFsyncSync = fs.fsyncSync
 const repoRoot = fileURLToPath(new URL("../", import.meta.url))
 const tempDirs: Array<string> = []
@@ -74,6 +76,7 @@ afterEach(() => {
   fs.fsyncSync = originalFsyncSync
   PATHS.GITHUB_TOKEN_PATH = originalGitHubTokenPath
   PATHS.CODEX_CREDENTIAL_PATH = originalCodexCredentialPath
+  PATHS.CONFIG_PATH = originalConfigPath
 
   while (tempDirs.length > 0) {
     fs.rmSync(tempDirs.pop()!, { recursive: true, force: true })
@@ -283,7 +286,7 @@ describe("Codex account store", () => {
     expect(readCodexCredentials()).resolves.toEqual(credentials)
   })
 
-  test("stores at most three accounts and allows an existing account update", async () => {
+  test("stores at most ten accounts and allows an existing account update", async () => {
     useTempCredentialPaths()
 
     for (let index = 1; index <= MAX_CODEX_ACCOUNTS; index += 1) {
@@ -320,7 +323,7 @@ describe("Codex account store", () => {
         accessToken: "overflow-access",
         refreshToken: "overflow-refresh",
         expiresAt: 100,
-        accountId: "account-4",
+        accountId: "account-11",
       }),
     ).rejects.toThrow(`Codex supports at most ${MAX_CODEX_ACCOUNTS} accounts`)
     expect((await readCodexCredentialStore())?.accounts).toHaveLength(
@@ -352,6 +355,53 @@ describe("Codex account store", () => {
       ),
     ).rejects.toThrow("Codex account alias 'work' is already in use")
     expect((await readCodexCredentialStore())?.accounts).toHaveLength(1)
+  })
+
+  test("renames an account without changing credentials and rejects duplicates", async () => {
+    const { codexCredentialPath } = useTempCredentialPaths()
+    PATHS.CONFIG_PATH = path.join(
+      path.dirname(codexCredentialPath),
+      "config.json",
+    )
+    fs.writeFileSync(
+      PATHS.CONFIG_PATH,
+      JSON.stringify({
+        providers: { codex: { accountId: "account-1", enabled: true } },
+      }),
+    )
+    const manager = createOAuthAccountManager({
+      provider: "codex",
+      label: "Codex",
+      credentialPath: () => codexCredentialPath,
+      selectAccount: () => undefined,
+    })
+    const first = {
+      accessToken: "access-1",
+      refreshToken: "refresh-1",
+      expiresAt: 1,
+      accountId: "account-1",
+    }
+    const second = {
+      accessToken: "access-2",
+      refreshToken: "refresh-2",
+      expiresAt: 2,
+      accountId: "account-2",
+    }
+    await manager.store.writeCredentials(first, { alias: "Old name" })
+    await manager.store.writeCredentials(second, { alias: "Private" })
+
+    expect(manager.rename("account-1", "Arbeitskonto")).resolves.toMatchObject({
+      accountId: "account-1",
+      alias: "Arbeitskonto",
+      active: true,
+    })
+    expect(manager.rename("account-2", "Arbeitskonto")).rejects.toThrow(
+      "Codex account alias 'Arbeitskonto' is already in use",
+    )
+    expect(await manager.store.readCredentials("account-1")).toEqual({
+      ...first,
+      alias: "Arbeitskonto",
+    })
   })
 
   test("serializes concurrent account updates without losing credentials", async () => {

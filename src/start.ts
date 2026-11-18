@@ -8,6 +8,7 @@ import { runProviderSetup } from "./auth"
 import { isGitHubCopilotEnabled } from "./lib/github-copilot-provider"
 import { listEnabledProviders, mergeConfigWithDefaults } from "./lib/config"
 import { setupCopilotRuntime } from "~/lib/copilot-runtime"
+import { describeCopilotSetupError } from "~/lib/github-error-message"
 import {
   GITHUB_TOKEN_ENV,
   readGitHubToken,
@@ -71,6 +72,42 @@ async function setupCopilotMode(
   )
 
   await setupCopilotRuntime(githubToken)
+}
+
+/**
+ * Copilot is optional when other providers are enabled: a rejected token
+ * exchange (e.g. an expired OAuth token, or a personal access token, which
+ * GitHub rejects for `/copilot_internal/v2/token`) must not take the whole
+ * gateway down. Without fallback providers the failure stays fatal, but with
+ * an actionable hint instead of the bare upstream error.
+ */
+export async function setupCopilotModeWithFallback(
+  githubToken: string,
+  source: GitHubTokenSource,
+  fallbackProviders: Array<string>,
+  setup: (
+    token: string,
+    tokenSource: GitHubTokenSource,
+  ) => Promise<void> = setupCopilotMode,
+): Promise<boolean> {
+  try {
+    await setup(githubToken, source)
+    state.copilotSetupError = undefined
+    return true
+  } catch (error) {
+    state.copilotSetupError = await describeCopilotSetupError(error)
+    const detail = error instanceof Error ? error.message : String(error)
+    if (fallbackProviders.length === 0) {
+      throw new Error(
+        `${detail}. Run \`copilot-api auth login\` to sign in again; the Copilot token exchange only accepts the OAuth token from that login, not a GitHub personal access token.`,
+        { cause: error },
+      )
+    }
+    consola.warn(
+      `GitHub Copilot setup failed (${detail}). Continuing with enabled providers: ${fallbackProviders.join(", ")}`,
+    )
+    return false
+  }
 }
 
 async function setupProviderMode(): Promise<void> {
@@ -148,9 +185,10 @@ export async function runServer(options: RunServerOptions): Promise<void> {
       await resolveGitHubToken(options.githubToken)
     : null
   if (resolvedGitHubToken && isGitHubCopilotEnabled()) {
-    await setupCopilotMode(
+    await setupCopilotModeWithFallback(
       resolvedGitHubToken.token,
       resolvedGitHubToken.source,
+      listEnabledProviders(),
     )
   } else {
     await setupProviderMode()
@@ -166,10 +204,23 @@ export async function runServer(options: RunServerOptions): Promise<void> {
     baseDir: PATHS.APP_DIR,
   })
   if (plugins) registerProcessCleanup(() => plugins.close())
+
+  // Parse allowed origins from environment variable (comma-separated)
+  const allowedOrigins =
+    process.env.COPILOT_API_ALLOWED_ORIGINS ?
+      process.env.COPILOT_API_ALLOWED_ORIGINS.split(",")
+        .map((o) => o.trim())
+        .filter(Boolean)
+    : []
+
+  const { seedAdminFromEnv } = await import("./routes/auth/route")
+  await seedAdminFromEnv()
+
   const server = createServer({
     networkExposed: binding.networkExposed,
     port: options.port,
     plugins,
+    allowedOrigins,
   })
 
   const { startTokenUsageRetention } = await import("./lib/token-usage/store")

@@ -11,9 +11,11 @@ import {
   normalizeCodexUsage,
   normalizeXaiUsage,
   normalizeCopilotUsage,
+  normalizeClaudeUsage,
   normalizeOpencodeGoUsage,
 } from "~/services/subscription-usage"
 import * as copilotUsage from "~/services/github/get-copilot-usage"
+import * as claudeOAuth from "~/lib/claude-code/oauth"
 import { usageRoute } from "~/routes/usage/route"
 
 const initialState = { ...state }
@@ -655,5 +657,89 @@ describe("subscription usage HTTP routes", () => {
     } as Awaited<ReturnType<typeof copilotUsage.getCopilotUsage>>)
     const copilot = await usageRoute.request("/")
     expect(await copilot.json()).toEqual({ copilot_plan: "individual" })
+  })
+})
+
+describe("Claude subscription usage", () => {
+  test("normalizes the five-hour, weekly and per-model windows", () => {
+    const usage = normalizeClaudeUsage({
+      five_hour: {
+        utilization: 9,
+        resets_at: "2026-11-14T18:00:00.000Z",
+      },
+      seven_day: { utilization: 5, resets_at: "2026-11-20T00:00:00.000Z" },
+      seven_day_sonnet: { utilization: 2 },
+      seven_day_opus: null,
+      extra_usage: { is_enabled: false },
+    })
+    expect(usage.provider).toBe("anthropic")
+    expect(usage.windows).toHaveLength(3)
+    expect(usage.windows[0]).toMatchObject({
+      id: "anthropic:five_hour",
+      kind: "usage",
+      usedPercent: 9,
+      windowSeconds: 18000,
+      resetAt: Date.parse("2026-11-14T18:00:00.000Z") / 1000,
+      limitReached: false,
+    })
+    expect(usage.windows[1]).toMatchObject({
+      id: "anthropic:seven_day",
+      windowSeconds: 604800,
+    })
+    expect(usage.windows[2]).toMatchObject({
+      id: "anthropic:seven_day_sonnet",
+      name: "Sonnet",
+    })
+    expect(usage.limitReached).toBe(false)
+  })
+
+  test("adds an enabled on-demand window and flags a reached limit", () => {
+    const usage = normalizeClaudeUsage({
+      five_hour: { utilization: 100 },
+      extra_usage: { is_enabled: true, utilization: 120 },
+    })
+    expect(usage.windows.map((window) => window.kind)).toEqual([
+      "usage",
+      "on-demand",
+    ])
+    expect(usage.limitReached).toBe(true)
+  })
+
+  test("skips windows without usable data", () => {
+    expect(normalizeClaudeUsage({})).toEqual({
+      provider: "anthropic",
+      windows: [],
+      limitReached: false,
+    })
+    expect(
+      normalizeClaudeUsage({ five_hour: { utilization: null } }).windows,
+    ).toHaveLength(0)
+  })
+
+  test("uses the stored token and the OAuth usage endpoint", async () => {
+    track(spyOn(claudeOAuth, "getClaudeAccessToken")).mockResolvedValue(
+      "claude-token",
+    )
+    const fetcher = track(spyOn(globalThis, "fetch")).mockResolvedValue(
+      Response.json({ five_hour: { utilization: 12 } }),
+    )
+    const usage = await getSubscriptionUsage("anthropic")
+    expect(usage?.provider).toBe("anthropic")
+    expect(usage?.windows[0].usedPercent).toBe(12)
+    const [url, init] = fetcher.mock.calls[0]
+    expect(url).toBe("https://api.anthropic.com/api/oauth/usage")
+    expect(new Headers(init?.headers).get("authorization")).toBe(
+      "Bearer claude-token",
+    )
+    expect(new Headers(init?.headers).get("anthropic-beta")).toBe(
+      "oauth-2025-04-20",
+    )
+  })
+
+  test("returns null when Claude is not signed in", async () => {
+    track(spyOn(claudeOAuth, "getClaudeAccessToken")).mockResolvedValue(null)
+    const fetcher = track(spyOn(globalThis, "fetch"))
+    expect(await getSubscriptionUsage("anthropic")).toBeNull()
+    expect(fetcher).not.toHaveBeenCalled()
   })
 })

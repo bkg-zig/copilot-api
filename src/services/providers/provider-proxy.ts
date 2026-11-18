@@ -10,6 +10,15 @@ import {
   normalizeProviderBaseUrl,
   type ResolvedProviderConfig,
 } from "~/lib/config"
+import {
+  noteProviderApiKeyResult,
+  selectProviderApiKey,
+} from "~/lib/provider-key-pool"
+import {
+  CLAUDE_OAUTH_BETA,
+  CLAUDE_OAUTH_USER_AGENT,
+  CLAUDE_OAUTH_VERSION,
+} from "~/lib/claude-code/oauth"
 import { getGrokBuildVersion } from "~/lib/grok-build"
 import { XAI_API_BASE_URL } from "~/lib/oauth/xai"
 import {
@@ -21,7 +30,11 @@ import type { AnthropicMessagesPayload } from "~/lib/types/anthropic"
 import type { ChatCompletionsPayload } from "~/lib/types/chat-completions"
 import type { ResponsesPayload } from "~/lib/types/responses"
 import type { GoogleModelsResponse } from "~/lib/types/google"
+import { createChatGPTWebChatCompletion } from "~/services/chatgpt/chat-completions"
 import { fetchUpstreamWithLifecycle } from "~/services/upstream-http"
+import { getWebAdapter } from "~/services/web/registry"
+import { webErrorResponse } from "~/services/web/stream"
+import { WebSessionError } from "~/services/web/types"
 
 const OPENCODE_GO_PROVIDER_NAME = "opencode-go"
 const OPENCODE_SESSION_HEADER = "x-opencode-session"
@@ -68,18 +81,40 @@ export function resolveProviderEndpointUrl(
   return `${apiBaseUrl}/${endpoint}`
 }
 
+/**
+ * Selects the API key for one upstream request. With a single key (or none)
+ * this is just `providerConfig.apiKey`; with a pool it rotates round-robin and
+ * returns the chosen key so the caller can report the upstream result.
+ */
+export function selectProviderRequestApiKey(
+  providerConfig: ResolvedProviderConfig,
+): { apiKey: string; key?: string } {
+  const pool = providerConfig.keyPool
+  if (!pool || pool.length === 0) {
+    return { apiKey: providerConfig.apiKey }
+  }
+  const key = selectProviderApiKey(providerConfig.name, pool)
+  return { apiKey: key ?? providerConfig.apiKey, key }
+}
+
 export function buildProviderUpstreamHeaders(
   providerConfig: ResolvedProviderConfig,
   requestHeaders: Headers,
+  apiKey: string = providerConfig.apiKey,
 ): Record<string, string> {
   const authHeaders: Record<string, string> = {}
-  if (
+  if (providerConfig.authType === "cookie") {
+    // Cookie-based authentication for ChatGPT passthrough
+    if (providerConfig.cookie) {
+      authHeaders.cookie = providerConfig.cookie
+    }
+  } else if (
     providerConfig.authType === "x-api-key"
     || providerConfig.authType === "x-goog-api-key"
   ) {
-    authHeaders[providerConfig.authType] = providerConfig.apiKey
+    authHeaders[providerConfig.authType] = apiKey
   } else {
-    authHeaders.authorization = `Bearer ${providerConfig.apiKey}`
+    authHeaders.authorization = `Bearer ${apiKey}`
   }
 
   const headers: Record<string, string> = {
@@ -110,7 +145,36 @@ export function buildProviderUpstreamHeaders(
     }
   }
 
+  if (
+    providerConfig.name === "anthropic"
+    && providerConfig.authType === "oauth2"
+  ) {
+    // The Claude subscription token is only accepted with the OAuth beta and
+    // a CLI-like client identity. Order matters: keep oauth-2025-04-20 first.
+    headers["anthropic-version"] = CLAUDE_OAUTH_VERSION
+    headers["anthropic-beta"] = mergeBetaHeaders(headers["anthropic-beta"], [
+      CLAUDE_OAUTH_BETA,
+      "claude-code-20250219",
+    ])
+    headers["x-app"] = "cli"
+    headers["user-agent"] = CLAUDE_OAUTH_USER_AGENT
+  }
+
   return headers
+}
+
+function mergeBetaHeaders(
+  current: string | undefined,
+  required: Array<string>,
+): string {
+  const values = new Set(
+    (current ?? "")
+      .split(",")
+      .map((value) => value.trim())
+      .filter(Boolean),
+  )
+  for (const value of required) values.add(value)
+  return [...values].join(",")
 }
 
 export const resolveOpencodeMessagesSession = (): string | undefined => {
@@ -198,6 +262,80 @@ export function createProviderProxyResponseHeaders(
   return headers
 }
 
+const MAX_PROVIDER_KEY_ATTEMPTS = 3
+
+interface ProviderForwardOptions {
+  method?: string
+  body?: RequestInit["body"]
+  clientSignal?: AbortSignal
+  headersTimeoutMs: number
+  streamInactivityTimeoutMs: number
+  /**
+   * Extra headers that depend on the chosen key (session affinity, xAI client
+   * metadata). Runs once per attempt with the selected key.
+   */
+  decorateHeaders?: (
+    headers: Record<string, string>,
+    apiKey: string,
+  ) => void | Promise<void>
+  /**
+   * Retry with another key after an upstream 429. Only safe for replayable
+   * bodies, so callers that stream a request body must disable it.
+   */
+  retryOnRateLimit?: boolean
+}
+
+/**
+ * Sends one upstream request, rotating through the provider's API-key pool.
+ * A 429 is retried with the next key (bounded by the pool size) because the
+ * upstream rejected the request before doing any work. 401/403 responses mark
+ * the key as cooling down so later requests skip it.
+ */
+async function fetchProviderUpstream(
+  providerConfig: ResolvedProviderConfig,
+  requestHeaders: Headers,
+  url: string,
+  options: ProviderForwardOptions,
+): Promise<Response> {
+  const pool = providerConfig.keyPool ?? []
+  const attempts =
+    options.retryOnRateLimit !== false && pool.length > 1 ?
+      Math.min(pool.length, MAX_PROVIDER_KEY_ATTEMPTS)
+    : 1
+  const seen = new Set<string>()
+  let response: Response | null = null
+
+  for (let attempt = 0; attempt < attempts; attempt++) {
+    const { apiKey, key } = selectProviderRequestApiKey(providerConfig)
+    if (seen.has(apiKey)) break
+    seen.add(apiKey)
+
+    const headers = buildProviderUpstreamHeaders(
+      providerConfig,
+      requestHeaders,
+      apiKey,
+    )
+    await options.decorateHeaders?.(headers, apiKey)
+
+    response = await fetchUpstreamWithLifecycle(
+      url,
+      { method: options.method ?? "POST", headers, body: options.body },
+      {
+        clientSignal: options.clientSignal,
+        headersTimeoutMs: options.headersTimeoutMs,
+        streamInactivityTimeoutMs: options.streamInactivityTimeoutMs,
+      },
+    )
+    noteProviderApiKeyResult(providerConfig.name, key, response.status)
+    if (response.status !== 429) break
+  }
+
+  if (!response) {
+    throw new Error("Provider upstream request was not attempted")
+  }
+  return response
+}
+
 export async function forwardProviderMessages(
   providerConfig: ResolvedProviderConfig,
   payload: AnthropicMessagesPayload,
@@ -205,25 +343,24 @@ export async function forwardProviderMessages(
   options: { clientSignal?: AbortSignal } = {},
 ): Promise<Response> {
   consola.log(`<-- model: ${payload.model}`)
-  const headers = buildProviderUpstreamHeaders(providerConfig, requestHeaders)
-  applyOpencodeSessionHeader(
-    providerConfig,
-    headers,
-    resolveOpencodeMessagesSession(),
-  )
   const transportConfig = getUpstreamTransportConfig()
   setPluginRequestActualModel(payload.model, providerConfig.name)
-  return await fetchUpstreamWithLifecycle(
+  return await fetchProviderUpstream(
+    providerConfig,
+    requestHeaders,
     resolveProviderEndpointUrl(providerConfig, "messages"),
     {
-      method: "POST",
-      headers,
       body: JSON.stringify(payload),
-    },
-    {
       clientSignal: options.clientSignal,
       headersTimeoutMs: transportConfig.headersTimeoutMs,
       streamInactivityTimeoutMs: transportConfig.streamInactivityTimeoutMs,
+      decorateHeaders: (headers) => {
+        applyOpencodeSessionHeader(
+          providerConfig,
+          headers,
+          resolveOpencodeMessagesSession(),
+        )
+      },
     },
   )
 }
@@ -235,25 +372,53 @@ export async function forwardProviderChatCompletions(
   options: { clientSignal?: AbortSignal } = {},
 ): Promise<Response> {
   consola.log(`<-- model: ${payload.model}`)
-  const headers = buildProviderUpstreamHeaders(providerConfig, requestHeaders)
-  applyOpencodeSessionHeader(
-    providerConfig,
-    headers,
-    payload.prompt_cache_key?.trim() || undefined,
-  )
+  if (providerConfig.type === "chatgpt") {
+    // ChatGPT web has no Chat Completions API; the adapter talks to the web
+    // conversation endpoint and answers in Chat Completions format.
+    setPluginRequestActualModel(payload.model, providerConfig.name)
+    return await createChatGPTWebChatCompletion(providerConfig, payload, {
+      clientSignal: options.clientSignal,
+    })
+  }
+  if (providerConfig.type === "web") {
+    const adapter = getWebAdapter(providerConfig.webAdapter)
+    if (!adapter) {
+      return webErrorResponse(
+        400,
+        "web_adapter_unknown",
+        `Provider '${providerConfig.name}' has no known web adapter '${providerConfig.webAdapter ?? ""}'.`,
+      )
+    }
+    setPluginRequestActualModel(payload.model, providerConfig.name)
+    try {
+      return await adapter.chatCompletion(providerConfig, payload, {
+        clientSignal: options.clientSignal,
+      })
+    } catch (error) {
+      if (error instanceof WebSessionError) {
+        return webErrorResponse(error.status, error.code, error.message)
+      }
+      throw error
+    }
+  }
   const transportConfig = getUpstreamTransportConfig()
   setPluginRequestActualModel(payload.model, providerConfig.name)
-  return await fetchUpstreamWithLifecycle(
+  return await fetchProviderUpstream(
+    providerConfig,
+    requestHeaders,
     resolveProviderEndpointUrl(providerConfig, "chat/completions"),
     {
-      method: "POST",
-      headers,
       body: JSON.stringify(payload),
-    },
-    {
       clientSignal: options.clientSignal,
       headersTimeoutMs: transportConfig.headersTimeoutMs,
       streamInactivityTimeoutMs: transportConfig.streamInactivityTimeoutMs,
+      decorateHeaders: (headers) => {
+        applyOpencodeSessionHeader(
+          providerConfig,
+          headers,
+          payload.prompt_cache_key?.trim() || undefined,
+        )
+      },
     },
   )
 }
@@ -266,25 +431,24 @@ export async function forwardProviderResponses(
 ): Promise<Response> {
   consola.log(`<-- model: ${payload.model}`)
   const transportConfig = getUpstreamTransportConfig()
-  const headers = buildProviderUpstreamHeaders(providerConfig, requestHeaders)
-  applyOpencodeSessionHeader(
-    providerConfig,
-    headers,
-    payload.prompt_cache_key?.trim() || undefined,
-  )
-  await applyXaiGrokBuildHeaders(providerConfig, headers, payload)
   setPluginRequestActualModel(payload.model, providerConfig.name)
-  return await fetchUpstreamWithLifecycle(
+  return await fetchProviderUpstream(
+    providerConfig,
+    requestHeaders,
     resolveProviderEndpointUrl(providerConfig, "responses"),
     {
-      method: "POST",
-      headers,
       body: JSON.stringify(payload),
-    },
-    {
-      headersTimeoutMs: transportConfig.headersTimeoutMs,
       clientSignal: options.clientSignal,
+      headersTimeoutMs: transportConfig.headersTimeoutMs,
       streamInactivityTimeoutMs: transportConfig.streamInactivityTimeoutMs,
+      decorateHeaders: async (headers) => {
+        applyOpencodeSessionHeader(
+          providerConfig,
+          headers,
+          payload.prompt_cache_key?.trim() || undefined,
+        )
+        await applyXaiGrokBuildHeaders(providerConfig, headers, payload)
+      },
     },
   )
 }
@@ -298,11 +462,37 @@ export async function forwardProviderModels(
   if (providerConfig.type === "google") {
     return await forwardGoogleModels(providerConfig, requestHeaders)
   }
-  return await fetch(resolveProviderEndpointUrl(providerConfig, "models"), {
-    method: "GET",
-    headers: buildProviderUpstreamHeaders(providerConfig, requestHeaders),
-    signal: AbortSignal.timeout(PROVIDER_MODELS_TIMEOUT_MS),
-  })
+  const pool = providerConfig.keyPool ?? []
+  const attempts =
+    pool.length > 1 ? Math.min(pool.length, MAX_PROVIDER_KEY_ATTEMPTS) : 1
+  const seen = new Set<string>()
+  let response: Response | null = null
+
+  for (let attempt = 0; attempt < attempts; attempt++) {
+    const { apiKey, key } = selectProviderRequestApiKey(providerConfig)
+    if (seen.has(apiKey)) break
+    seen.add(apiKey)
+
+    response = await fetch(
+      resolveProviderEndpointUrl(providerConfig, "models"),
+      {
+        method: "GET",
+        headers: buildProviderUpstreamHeaders(
+          providerConfig,
+          requestHeaders,
+          apiKey,
+        ),
+        signal: AbortSignal.timeout(PROVIDER_MODELS_TIMEOUT_MS),
+      },
+    )
+    noteProviderApiKeyResult(providerConfig.name, key, response.status)
+    if (response.status !== 429) break
+  }
+
+  if (!response) {
+    throw new Error("Provider models request was not attempted")
+  }
+  return response
 }
 
 async function forwardGoogleModels(
@@ -313,15 +503,19 @@ async function forwardGoogleModels(
   const pageTokens = new Set<string>()
   let pageToken: string | undefined
   const signal = AbortSignal.timeout(PROVIDER_MODELS_TIMEOUT_MS)
+  const { apiKey, key } = selectProviderRequestApiKey(provider)
   do {
     const url = new URL(resolveProviderEndpointUrl(provider, "models"))
     url.searchParams.set("pageSize", "1000")
     if (pageToken) url.searchParams.set("pageToken", pageToken)
     const upstream = await fetch(url, {
-      headers: buildProviderUpstreamHeaders(provider, requestHeaders),
+      headers: buildProviderUpstreamHeaders(provider, requestHeaders, apiKey),
       signal,
     })
-    if (!upstream.ok) return upstream
+    if (!upstream.ok) {
+      noteProviderApiKeyResult(provider.name, key, upstream.status)
+      return upstream
+    }
     const body = (await upstream.json()) as GoogleModelsResponse
     for (const model of body.models ?? []) {
       if (!model.supportedGenerationMethods?.includes("generateContent"))
@@ -369,18 +563,15 @@ export async function forwardProviderAlphaSearch(
   request: Request,
   options: { clientSignal?: AbortSignal } = {},
 ): Promise<Response> {
-  const headers = buildProviderUpstreamHeaders(providerConfig, request.headers)
   const body = await request.arrayBuffer()
   const transportConfig = getUpstreamTransportConfig()
 
-  return await fetchUpstreamWithLifecycle(
+  return await fetchProviderUpstream(
+    providerConfig,
+    request.headers,
     resolveProviderRequestUrl(providerConfig, request.url, "/v1/alpha/search"),
     {
-      method: "POST",
-      headers,
       body,
-    },
-    {
       clientSignal: options.clientSignal,
       headersTimeoutMs: transportConfig.headersTimeoutMs,
       streamInactivityTimeoutMs: transportConfig.streamInactivityTimeoutMs,
@@ -393,7 +584,12 @@ export async function forwardProviderImages(
   request: Request,
   operation: "generations" | "edits",
 ): Promise<Response> {
-  const headers = buildProviderUpstreamHeaders(providerConfig, request.headers)
+  const { apiKey, key } = selectProviderRequestApiKey(providerConfig)
+  const headers = buildProviderUpstreamHeaders(
+    providerConfig,
+    request.headers,
+    apiKey,
+  )
   const contentType = request.headers.get("content-type")
   if (contentType) {
     headers["content-type"] = contentType
@@ -418,14 +614,19 @@ export async function forwardProviderImages(
     `/v1/images/${operation}`,
   )
 
-  if (typeof Bun !== "undefined") {
-    return await fetch(upstreamUrl, init)
-  }
-
-  // Node's global fetch keeps Undici's shorter default headers/body timeouts.
-  // Use an explicit dispatcher so the documented 15-minute cap applies there.
-  return (await undiciFetch(upstreamUrl, {
-    ...init,
-    dispatcher: providerImagesDispatcher,
-  } as unknown as UndiciRequestInit)) as unknown as Response
+  // The request body is a stream, so a 429 cannot be replayed with another
+  // key. Select once, then record the outcome so later requests avoid a key
+  // that was rejected.
+  const response =
+    typeof Bun !== "undefined" ?
+      await fetch(upstreamUrl, init)
+      // Node's global fetch keeps Undici's shorter default headers/body
+      // timeouts. Use an explicit dispatcher so the documented 15-minute cap
+      // applies there.
+    : ((await undiciFetch(upstreamUrl, {
+        ...init,
+        dispatcher: providerImagesDispatcher,
+      } as unknown as UndiciRequestInit)) as unknown as Response)
+  noteProviderApiKeyResult(providerConfig.name, key, response.status)
+  return response
 }

@@ -249,6 +249,7 @@ const shouldFallbackToMessages = (
     effectiveType === "anthropic"
     || effectiveType === "openai-compatible"
     || effectiveType === "google"
+    || effectiveType === "chatgpt"
   ) {
     return true
   }

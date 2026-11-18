@@ -3,7 +3,11 @@ import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
 
-import { resolveOpencodeVersionFromNpmRoot } from "~/lib/opencode"
+import {
+  parseOpencodeCliVersion,
+  resolveOpencodeVersionFromCli,
+  resolveOpencodeVersionFromNpmRoot,
+} from "~/lib/opencode"
 
 const tempDirs: Array<string> = []
 
@@ -73,4 +77,51 @@ test("rejects when neither package is installed", async () => {
     (error: unknown) => error,
   )
   expect(result).toBeInstanceOf(Error)
+})
+
+test.each([
+  ["opencode v2.2.7", "2.2.7"],
+  ["v2.2.7", "2.2.7"],
+  ["2.2.7", "2.2.7"],
+  ["opencode v2.2.7 (linux-x64)", "2.2.7"],
+  ["opencode v2.2.7-beta.1", "2.2.7-beta.1"],
+])("parses the version from cli output %j", (output, expected) => {
+  expect(parseOpencodeCliVersion(output)).toBe(expected)
+})
+
+test.each(["", "opencode", "unknown version"])(
+  "returns undefined for unparsable cli output %j",
+  (output) => {
+    expect(parseOpencodeCliVersion(output)).toBeUndefined()
+  },
+)
+
+test("resolves the version reported by the opencode binary", async () => {
+  const calls: Array<[string, Array<string>]> = []
+  const version = await resolveOpencodeVersionFromCli((file, args) => {
+    calls.push([file, args])
+    return Promise.resolve("opencode v2.2.7\n")
+  })
+
+  expect(version).toBe("2.2.7")
+  expect(calls).toEqual([["opencode", ["--version"]]])
+})
+
+test("returns undefined when the opencode binary is not installed", async () => {
+  const version = await resolveOpencodeVersionFromCli(() => {
+    const error: NodeJS.ErrnoException = new Error("spawn opencode ENOENT")
+    error.code = "ENOENT"
+    return Promise.reject(error)
+  })
+
+  expect(version).toBeUndefined()
+})
+
+test("rethrows unexpected errors from the opencode binary", async () => {
+  const result = await resolveOpencodeVersionFromCli(() =>
+    Promise.reject(new Error("boom")),
+  ).catch((error: unknown) => error)
+
+  expect(result).toBeInstanceOf(Error)
+  expect((result as Error).message).toBe("boom")
 })

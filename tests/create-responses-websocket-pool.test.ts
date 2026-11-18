@@ -1358,6 +1358,35 @@ test("Copilot cancellation drains the old stream while the follow-up uses a sepa
   })
 })
 
+test("retries a stale client-supplied previous response with full input", async () => {
+  const input = continuationHistory()
+  MockWebSocket.continuationError = { code: "previous_response_not_found" }
+  const chunks = await withAffinity("explicit-retry", async () =>
+    collectStreamChunks(
+      (await createResponses(
+        {
+          model: "gpt-continuation",
+          stream: true,
+          input,
+          previous_response_id: "stale-response",
+        },
+        {
+          requestId: "explicit-retry",
+          initiator: "user",
+          transport: "websocket",
+          vision: false,
+          clientSignal: new AbortController().signal,
+        },
+      )) as AsyncIterable<unknown>,
+    ),
+  )
+  expect(chunks.some((chunk) => chunk.event === "error")).toBe(false)
+  expect(MockWebSocket.instances).toHaveLength(2)
+  expect(continuationRequest(0, 0).previous_response_id).toBe("stale-response")
+  expect(continuationRequest(1, 0)).toMatchObject({ input })
+  expect(continuationRequest(1, 0).previous_response_id).toBeUndefined()
+})
+
 test.each([
   { code: "previous_response_not_found" },
   { code: "unsupported_parameter", param: "previous_response_id" },

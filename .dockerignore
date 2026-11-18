@@ -34,6 +34,15 @@ docs/
 plugin/
 desktop/
 
+# Reference sources and local helper scripts (never part of the image)
+vendor/
+.dirfd-probe-*
+pnpm-lock.yaml
+pnpm-workspace.yaml
+setup-voice-provider.sh
+update-config.sh
+update_voice_provider.py
+
 # OS/editor files
 .DS_Store
 Thumbs.db

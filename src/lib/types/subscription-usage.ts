@@ -3,6 +3,7 @@ export type SubscriptionProvider =
   | "codex"
   | "xai"
   | "opencode-go"
+  | "anthropic"
 
 export interface SubscriptionQuotaWindow {
   id: string

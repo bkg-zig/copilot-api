@@ -1,13 +1,13 @@
 import consola from "consola"
-import { exec } from "node:child_process"
+import { execFile } from "node:child_process"
 import { readFile } from "node:fs/promises"
 import path from "node:path"
 
-const execAsync = (command: string): Promise<string> => {
+const execFileAsync = (file: string, args: Array<string>): Promise<string> => {
   return new Promise((resolve, reject) => {
-    exec(command, (error, stdout) => {
+    execFile(file, args, (error, stdout) => {
       if (error) {
-        reject(error)
+        reject(error instanceof Error ? error : new Error("Unknown error"))
         return
       }
 
@@ -16,13 +16,28 @@ const execAsync = (command: string): Promise<string> => {
   })
 }
 
+const isCommandUnavailable = (error: unknown): boolean => {
+  if (!error || typeof error !== "object") return false
+  const err = error as NodeJS.ErrnoException
+  return err.code === "ENOENT"
+}
+
 const OPENCODE_PACKAGE_NAMES = ["@opencode/cli", "opencode-ai"] as const
+const OPENCODE_VERSION_PATTERN = /v?(\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?)/
 
 let opencodeVersionCache: string | undefined
 
-const getGlobalNpmRoot = async (): Promise<string> => {
-  const stdout = await execAsync("npm root -g")
-  return stdout.trim()
+const getGlobalNpmRoot = async (): Promise<string | undefined> => {
+  try {
+    const stdout = await execFileAsync("npm", ["root", "-g"])
+    const root = stdout.trim()
+    return root || undefined
+  } catch (error) {
+    if (isCommandUnavailable(error)) {
+      return undefined
+    }
+    throw error
+  }
 }
 
 const readPackageVersion = async (packageJsonPath: string): Promise<string> => {
@@ -46,6 +61,25 @@ const readPackageVersion = async (packageJsonPath: string): Promise<string> => {
   return version
 }
 
+export const parseOpencodeCliVersion = (output: string): string | undefined => {
+  const match = OPENCODE_VERSION_PATTERN.exec(output.trim())
+  return match?.[1]
+}
+
+export const resolveOpencodeVersionFromCli = async (
+  run: (file: string, args: Array<string>) => Promise<string>,
+): Promise<string | undefined> => {
+  try {
+    const stdout = await run("opencode", ["--version"])
+    return parseOpencodeCliVersion(stdout)
+  } catch (error) {
+    if (isCommandUnavailable(error)) {
+      return undefined
+    }
+    throw error
+  }
+}
+
 export const resolveOpencodeVersionFromNpmRoot = async (
   npmRootPath: string,
 ): Promise<string> => {
@@ -65,11 +99,55 @@ export const resolveOpencodeVersionFromNpmRoot = async (
 }
 
 async function resolveOpencodeVersion(): Promise<void> {
+  const version = await resolveOpencodeVersionSafely()
+  if (version) {
+    opencodeVersionCache = version
+  }
+}
+
+const resolveOpencodeVersionSafely = async (): Promise<string | undefined> => {
+  // The official installer ships opencode as a standalone binary outside the
+  // npm global root, so ask the binary itself first.
+  try {
+    const fromCli = await resolveOpencodeVersionFromCli(execFileAsync)
+    if (fromCli) {
+      return fromCli
+    }
+  } catch (error) {
+    consola.warn(
+      "Failed to resolve opencode version from the opencode binary",
+      error,
+    )
+  }
+
+  // Try to resolve from npm global packages. If npm itself is not available,
+  // just return undefined (opencode binary path fallback already handled above).
   try {
     const npmRootPath = await getGlobalNpmRoot()
-    opencodeVersionCache = await resolveOpencodeVersionFromNpmRoot(npmRootPath)
+    if (!npmRootPath) {
+      consola.debug(
+        "Skipping opencode version resolution: npm is not available",
+      )
+      return undefined
+    }
+    try {
+      return await resolveOpencodeVersionFromNpmRoot(npmRootPath)
+    } catch (npmError) {
+      if (isCommandUnavailable(npmError)) {
+        consola.debug(
+          "Skipping opencode version resolution: opencode is not installed as an npm package",
+        )
+        return undefined
+      }
+      consola.warn(
+        "Failed to resolve opencode version from npm packages",
+        npmError,
+      )
+      return undefined
+    }
   } catch (error) {
-    consola.warn(`Failed to resolve opencode version`, error)
+    consola.warn("Failed to get npm global root", error)
+    return undefined
   }
 }
 

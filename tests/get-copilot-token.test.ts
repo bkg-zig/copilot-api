@@ -65,6 +65,30 @@ test("returns a token envelope without endpoints when absent", async () => {
   expect(result.endpoints).toBeUndefined()
 })
 
+test("checks another account's token without touching the running one", async () => {
+  state.githubToken = "running-token"
+  const controller = new AbortController()
+  let init: RequestInit | undefined
+  globalThis.fetch = mock((_url: string, requestInit?: RequestInit) => {
+    init = requestInit
+    return Promise.resolve(
+      new Response(
+        JSON.stringify({ token: "t", expires_at: 1, refresh_in: 1 }),
+        { status: 200 },
+      ),
+    )
+  }) as unknown as typeof fetch
+
+  await getCopilotToken("new-account-token", controller.signal)
+
+  const headers = init?.headers as Record<string, string>
+  expect(headers.authorization ?? headers.Authorization).toContain(
+    "new-account-token",
+  )
+  expect(init?.signal).toBe(controller.signal)
+  expect(state.githubToken).toBe("running-token")
+})
+
 test("throws HTTPError when the token exchange fails", () => {
   state.githubToken = "github-token"
 
@@ -73,4 +97,17 @@ test("throws HTTPError when the token exchange fails", () => {
   ) as unknown as typeof fetch
 
   expect(getCopilotToken()).rejects.toBeInstanceOf(HTTPError)
+})
+
+test("includes the upstream status in the token exchange error", async () => {
+  state.githubToken = "github-token"
+
+  globalThis.fetch = mock(() =>
+    Promise.resolve(new Response("unauthorized", { status: 401 })),
+  ) as unknown as typeof fetch
+
+  const error = await getCopilotToken().catch((caught: unknown) => caught)
+
+  expect(error).toBeInstanceOf(HTTPError)
+  expect((error as Error).message).toContain("401")
 })

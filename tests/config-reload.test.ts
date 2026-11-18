@@ -8,10 +8,12 @@ import {
   test,
   type Mock,
 } from "bun:test"
+import consola from "consola"
 import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
 
+import { HTTPError } from "~/lib/error"
 import {
   getClaudeAutoModel,
   getConfig,
@@ -218,6 +220,77 @@ describe("running server config reload", () => {
     expect(failure).toHaveProperty("message", "upstream offline")
     await reloadServerConfig()
     expect(state.copilotToken).toBe("copilot-saved-github-token")
+  })
+
+  test("keeps other providers running when Copilot cannot start", async () => {
+    saveConfig({
+      providers: {
+        "github-copilot": { enabled: true },
+        backup: {
+          enabled: true,
+          baseUrl: "https://backup.example.test",
+          apiKey: "backup-key",
+        },
+      },
+    })
+    setupCopilotTokenMock.mockImplementationOnce(() =>
+      Promise.reject(
+        new HTTPError(
+          "Failed to get Copilot token (GitHub responded 403)",
+          Response.json(
+            {
+              error_details: {
+                message: "Your account's billing is currently locked.",
+              },
+            },
+            { status: 403 },
+          ),
+        ),
+      ),
+    )
+    const warn = spyOn(consola, "warn").mockImplementation(
+      Object.assign(() => {}, { raw: () => {} }),
+    )
+
+    await reloadServerConfig()
+
+    expect(state.copilotToken).toBeUndefined()
+    expect(state.copilotSetupError).toBe(
+      "Your account's billing is currently locked.",
+    )
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining("Continuing with enabled providers: backup"),
+    )
+
+    await reloadServerConfig()
+    expect(state.copilotToken).toBe("copilot-saved-github-token")
+    expect(state.copilotSetupError).toBeUndefined()
+  })
+
+  test("records why Copilot failed when it is the only provider", async () => {
+    saveConfig({ providers: { "github-copilot": { enabled: true } } })
+    spyOn(tokens, "logUser").mockRejectedValueOnce(
+      new Error("upstream offline"),
+    )
+
+    const failure = await reloadServerConfig().catch((error: unknown) => error)
+
+    expect(failure).toHaveProperty("message", "upstream offline")
+    expect(state.copilotSetupError).toBe(
+      "Copilot could not start. See the server log.",
+    )
+  })
+
+  test("forgets an old failure once Copilot is off or signed out", async () => {
+    state.copilotSetupError = "old failure"
+    await reloadServerConfig()
+    expect(state.copilotSetupError).toBeUndefined()
+
+    saveConfig({ providers: { "github-copilot": { enabled: true } } })
+    spyOn(credentials, "readGitHubToken").mockResolvedValue(null)
+    state.copilotSetupError = "old failure"
+    await reloadServerConfig()
+    expect(state.copilotSetupError).toBeUndefined()
   })
 
   test("stops the models loop before a token switch that fails to initialize", async () => {

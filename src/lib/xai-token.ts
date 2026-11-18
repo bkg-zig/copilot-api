@@ -41,6 +41,7 @@ const xaiAccounts = createOAuthAccountManager({
 export const getXaiAccounts = xaiAccounts.list
 export const selectXaiAccount = xaiAccounts.select
 export const removeXaiAccount = xaiAccounts.remove
+export const renameXaiAccount = xaiAccounts.rename
 
 export async function readXaiCredentials(
   accountId = getRawProviderConfig("xai")?.accountId,

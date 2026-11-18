@@ -117,6 +117,14 @@ export function prepareResponsesContinuation<T extends ResponsesPayload>(
     ) ?
       findDeltaStart(input, previous.anchor)
     : -1
+  // A stale client-supplied previous_response_id must not poison the retry.
+  // When the caller included the full input, the second attempt can be sent as
+  // a fresh response. This also keeps the behavior safe for clients that do
+  // not use our connection-local continuation checkpoints.
+  const fullInputPayload = { ...payload }
+  if (forceFull && Array.isArray(input) && explicitPrevious !== undefined) {
+    delete fullInputPayload.previous_response_id
+  }
   const outgoing =
     start >= 0 && previous && Array.isArray(input) ?
       {
@@ -124,7 +132,7 @@ export function prepareResponsesContinuation<T extends ResponsesPayload>(
         previous_response_id: previous.responseId,
         input: input.slice(start),
       }
-    : payload
+    : fullInputPayload
   // Track only opaque anchors and item roles, never output text.
   const outputItems = new Map<number, OutputMarker>()
   let candidate: ContinuationState | undefined

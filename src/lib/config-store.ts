@@ -8,13 +8,139 @@ import { writeFileAtomically } from "./atomic-file"
 import { isGitHubCopilotAvailable } from "./github-copilot-provider"
 import { PATHS } from "./paths"
 
+export interface ComboTarget {
+  // Provider name (e.g., "anthropic", "openai", "nvidia")
+  provider: string
+  // Model name within that provider (e.g., "claude-opus-4", "gpt-5.6-sol")
+  model: string
+  // Weight for round-robin/random strategies (1-10000)
+  weight?: number
+  // Whether this is a last-resort emergency target
+  lastResort?: boolean
+  // Whether this target requires metered consent
+  metered?: boolean
+}
+
+export type ComboStrategy =
+  | "failover"
+  | "round-robin"
+  | "random"
+  | "least-used"
+  | "reset-window"
+  | "jev"
+
+export interface ComboConfig {
+  // Ordered list of concrete targets
+  targets: ComboTarget[]
+  // Selection strategy
+  strategy?: ComboStrategy
+  // Successful requests retained in one round-robin batch (1-100)
+  stickyLimit?: number
+  // Cooldown in ms when a target fails (1-600000)
+  cooldownMs?: number
+  // Maximum wait for cooling target on each selection attempt (0-600000)
+  waitForCooldownMs?: number
+  // Defer last-resort targets until no normal target available
+  cooldownWaitPolicy?: "before-last-resort"
+  // Default reasoning effort for requests without explicit effort
+  defaultEffort?: "low" | "medium" | "high" | "xhigh" | "max" | "ultra" | null
+  // Whether to force default effort or use as fallback
+  defaultEffortMode?: "fallback" | "force"
+  // Reasoning effort mode: "strict" intersects all ladders, "adaptive" excludes empty
+  reasoningEffortMode?: "strict" | "adaptive"
+  // JEV effort mode: "decide" applies decision's effort, "client" keeps client's
+  jevEffortMode?: "decide" | "client"
+  // Image input handling: "auto" publishes only when all targets support images
+  imageInput?: "auto" | "disabled"
+  // Optional public model id alias
+  alias?: string
+  // Allow bare native id to take precedence (for Codex Desktop compatibility)
+  nativeAlias?: boolean
+  // Display-only catalog label (required for nativeAlias)
+  displayName?: string
+  // JEV decision provider (for strategy: "jev")
+  decisionProvider?: string
+  // JEV decision model (mutually exclusive with decisionProvider)
+  decisionModel?: string
+  // JEV decision timeout in ms (1000-120000)
+  decisionTimeoutMs?: number
+  // JEV: send quota signals to decision backend
+  decisionQuotaSignals?: boolean
+  // JEV: quota tier thresholds
+  decisionQuotaTiers?: {
+    moderate?: number
+    limited?: number
+    nearlyExhausted?: number
+  }
+  // JEV: session pin config
+  sessionPin?: {
+    ttlMs: number
+  } | null
+  // Whether this combo is enabled
+  enabled?: boolean
+  // Optional description
+  description?: string
+  // Tags for categorization
+  tags?: Array<string>
+}
+
+export interface CombosConfig {
+  combos: Record<string, ComboConfig>
+}
+
+export interface VirtualModelConfig {
+  // The real model this virtual model maps to (e.g., "nvidia/minimaxai/minimax-m3.1-flash")
+  target: string
+  // Optional list of provider names that are allowed to serve this virtual model
+  // If empty or undefined, any provider can serve it
+  allowedProviders?: Array<string>
+  // Maximum context window for this virtual model (in tokens)
+  contextWindow?: number
+  // Model version: "v1" | "base" | "v2" - affects API format
+  version?: "v1" | "base" | "v2"
+  // For v2 models: maximum concurrent threads
+  v2ThreadLimit?: number
+  // Whether this virtual model is enabled
+  enabled?: boolean
+  // Optional description
+  description?: string
+  // Tags for categorization
+  tags?: Array<string>
+  // Sub-agent fallback chain for this model
+  subagentFallback?: Array<string>
+}
+
+export interface VirtualModelsConfig {
+  // Map of virtual model name to its configuration
+  models: Record<string, VirtualModelConfig>
+  // Global default settings for virtual models
+  defaults?: {
+    version?: "v1" | "base" | "v2"
+    v2ThreadLimit?: number
+    contextWindow?: number
+  }
+  // Global sub-agent fallback chain
+  subagentFallback?: Array<string>
+  // Sub-agent fallback per model
+  subagentFallbackByModel?: Record<string, Array<string>>
+  // Sub-agent surface mode: "v1" | "base" | "v2"
+  subagentSurface?: "v1" | "base" | "v2"
+  // Poll interval for fallback availability (ms)
+  subagentFallbackPollMs?: number
+}
+
 export interface AppConfig {
   auth?: {
     apiKeys?: Array<string>
     adminApiKey?: string
   }
   providers?: Record<string, ProviderConfig>
+  // Legacy simple model mappings (source -> target) - kept for backward compatibility
   modelMappings?: Record<string, string>
+  // New advanced virtual model system
+  virtualModels?: VirtualModelsConfig
+  // Combos: failover and load balancing across providers
+  combos?: CombosConfig
   extraPrompts?: Record<string, string>
   smallModels?: SmallModelsConfig
   contextManagement?: ContextManagementConfig
@@ -55,6 +181,48 @@ export interface AppConfig {
   claudeTokenMultiplier?: number
   // Days of token_usage_events to keep. Unset means keep every row.
   tokenUsageRetentionDays?: number
+  // Prompt-aware "best model" router. When a client requests the configured
+  // alias (default "auto"), the gateway reads the prompt and picks a model
+  // from `pool` using rules and/or a built-in heuristic.
+  router?: RouterConfig
+}
+
+export interface RouterRule {
+  // JavaScript regular expression source matched against the prompt text.
+  match: string
+  // Model id (optionally a `provider/model` alias) to route to on a match.
+  model: string
+  // Optional regular expression flags (default "i").
+  flags?: string
+}
+
+export type RouterStrategy = "auto" | "rules" | "heuristic"
+
+export interface RouterConfig {
+  enabled?: boolean
+  // Model id clients send to trigger routing. Defaults to "auto".
+  alias?: string
+  // Candidate model ids the router may choose from.
+  pool?: Array<string>
+  strategy?: RouterStrategy
+  // Ordered rules evaluated before the heuristic when strategy is "auto".
+  rules?: Array<RouterRule>
+  // Fallback when no rule matches and the heuristic cannot decide.
+  defaultModel?: string
+  // Optional per-model hints used by the heuristic, keyed by model id.
+  modelHints?: Record<string, RouterModelHint>
+}
+
+export interface RouterModelHint {
+  // Higher is more capable; lower is faster/cheaper. 0-100.
+  power?: number
+  vision?: boolean
+  code?: boolean
+  reasoning?: boolean
+  safety?: boolean
+  // Relative cost, 0 (free/cheap) to 100 (expensive). Used to prefer cheap
+  // models for simple prompts.
+  cost?: number
 }
 
 export interface SmallModelsConfig {
@@ -124,14 +292,32 @@ export type ProviderAuthType =
   | "oauth2"
   | "x-api-key"
   | "x-goog-api-key"
+  | "cookie"
 export const SUPPORTED_PROVIDER_TYPES = [
   "anthropic",
   "openai-compatible",
   "openai-responses",
   "google",
+  "chatgpt",
+  "web",
 ] as const
 export type ProviderType = (typeof SUPPORTED_PROVIDER_TYPES)[number]
 export type ToolContentSupportType = "array" | "image" | "pdf"
+
+/**
+ * One key in a provider's API-key pool. `apiKey` remains the single-key
+ * shorthand; `apiKeys` adds rotation across several keys for the same upstream
+ * provider (for example several NVIDIA NIM keys with their own rate limits).
+ */
+export interface ProviderApiKeyConfig {
+  key: string
+  /** Disabled keys are kept in config but never selected. Defaults to true. */
+  enabled?: boolean
+  /** Optional per-key request budget per minute. Omitted means unlimited. */
+  rpm?: number
+  /** Optional label for diagnostics only; never used for authentication. */
+  owner?: string
+}
 
 export interface ProviderConfig {
   type?: string
@@ -139,11 +325,23 @@ export interface ProviderConfig {
   baseUrl?: string
   modelsDevProviderId?: string
   apiKey?: string
+  apiKeys?: Array<ProviderApiKeyConfig>
   authType?: ProviderAuthType
   accountId?: string
   pricingCurrency?: string
   models?: Record<string, ModelConfig>
   agentsModels?: Array<string>
+  /**
+   * Glob patterns (for example `*-free`) of upstream model ids to keep. When
+   * set, only matching ids are listed for this provider; everything else is
+   * hidden from the catalog and the Admin UI.
+   */
+  includeModels?: Array<string>
+  /** Glob patterns of upstream model ids to hide for this provider. */
+  excludeModels?: Array<string>
+  cookie?: string
+  /** Adapter id for `type: "web"` providers (see src/services/web/registry). */
+  webAdapter?: string
 }
 
 const modelResponsesApiCompactThresholds = {
@@ -158,14 +356,45 @@ export const defaultContextManagement = {
 
 export const defaultOpencodeModelContextWindow = 400_000
 
+// Voice provider for api.eysho.info - used as default for agent-talk integration
+const VOICE_PROVIDER_CONFIG: ProviderConfig = {
+  type: "openai-compatible",
+  baseUrl: "https://api.eysho.info/voice",
+  pricingCurrency: "USD",
+}
+
 export const defaultConfig: AppConfig = {
   auth: {
     apiKeys: [],
   },
-  providers: {},
+  providers: {
+    // Voice provider for agent-talk integration - api.eysho.info for all requests
+    voice: VOICE_PROVIDER_CONFIG,
+  },
   modelMappings: {
     "codex-auto-review": "codex/codex-auto-review",
     "gpt-reserve": "codex/gpt-reserve",
+  },
+  virtualModels: {
+    models: {
+      "codex-auto-review": {
+        target: "codex/codex-auto-review",
+        description: "Codex automated code review model",
+        tags: ["codex", "review"],
+      },
+      "gpt-reserve": {
+        target: "codex/gpt-reserve",
+        description: "Codex GPT reserve model",
+        tags: ["codex"],
+      },
+    },
+    defaults: {
+      version: "base",
+      v2ThreadLimit: 4,
+    },
+  },
+  combos: {
+    combos: {},
   },
   smallModels: {
     codex: "gpt-6-luna",

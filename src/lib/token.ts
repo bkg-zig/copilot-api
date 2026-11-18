@@ -35,6 +35,11 @@ import { state } from "./state"
 import { createOAuthAccountManager } from "./oauth-accounts"
 import type { OAuthAccountSummary } from "./types/oauth"
 import { PATHS } from "./paths"
+import {
+  DEFAULT_CODEX_CAPABILITIES,
+  probeCodexCapabilities,
+  type CodexAccountCapabilities,
+} from "./codex-capabilities"
 
 let copilotRefreshLoopController: AbortController | null = null
 let codexRefreshLoopController: AbortController | null = null
@@ -127,12 +132,27 @@ function getLoadedCodexCredentials(): CodexCredentials | null {
   }
 }
 
+function syncChatGPTProviderConfig(): void {
+  const existingProviderConfig =
+    readEditableConfigFromDisk().providers?.chatgpt ?? {}
+  setProviderConfig("chatgpt", {
+    ...existingProviderConfig,
+    type: "chatgpt",
+    enabled: true,
+    baseUrl: CODEX_API_BASE_URL,
+    authType: "cookie",
+    pricingCurrency: "USD",
+  })
+}
+
 function syncCodexProviderConfig(options?: {
   accountId?: string
   enabled?: boolean
 }): void {
   const existingProviderConfig =
     readEditableConfigFromDisk().providers?.codex ?? {}
+  const codexEnabled =
+    options?.enabled === true || existingProviderConfig.enabled === true
   setProviderConfig("codex", {
     ...existingProviderConfig,
     type: "openai-responses",
@@ -142,6 +162,7 @@ function syncCodexProviderConfig(options?: {
     accountId: options?.accountId ?? existingProviderConfig.accountId,
     pricingCurrency: "USD",
   })
+  if (codexEnabled) syncChatGPTProviderConfig()
 }
 
 function getConfiguredCodexAccountId(): string | undefined {
@@ -157,6 +178,7 @@ const codexAccounts = createOAuthAccountManager({
 export const getCodexAccounts = codexAccounts.list
 export const selectCodexAccount = codexAccounts.select
 export const removeCodexAccount = codexAccounts.remove
+export const renameCodexAccount = codexAccounts.rename
 
 export async function persistCodexCredentials(
   credentials: CodexCredentials,
@@ -164,10 +186,26 @@ export async function persistCodexCredentials(
 ): Promise<void> {
   const generation = options.runtimeGeneration ?? codexRuntimeGeneration
   const persist = async (): Promise<void> => {
+    // Probe capabilities for new accounts (insertIfMissing = true means new sign-in)
+    let capabilities: CodexAccountCapabilities | undefined
+    if (options.insertIfMissing) {
+      try {
+        capabilities = await probeCodexCapabilities(credentials)
+        consola.debug("Probed Codex capabilities", {
+          accountId: credentials.accountId,
+          capabilities,
+        })
+      } catch (error) {
+        consola.warn("Failed to probe Codex capabilities", { error })
+        capabilities = DEFAULT_CODEX_CAPABILITIES
+      }
+    }
+
     await writeCodexCredentials(credentials, {
       alias: options.alias,
       insertIfMissing: options.insertIfMissing,
       expectedRefreshToken: options.expectedRefreshToken,
+      capabilities,
     })
     if (options.syncProvider !== false) {
       syncCodexProviderConfig({

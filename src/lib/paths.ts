@@ -13,15 +13,25 @@ const GITHUB_TOKEN_PATH = path.join(
   AUTH_APP,
   ENTERPRISE_PREFIX + "github_token",
 )
+// Every GitHub account added in the dashboard. The active account's token is
+// mirrored into GITHUB_TOKEN_PATH, which the Copilot runtime reads.
+const GITHUB_ACCOUNTS_PATH = path.join(
+  APP_DIR,
+  AUTH_APP,
+  ENTERPRISE_PREFIX + "github_accounts.json",
+)
 const CODEX_CREDENTIAL_PATH = path.join(APP_DIR, "codex_credentials.json")
 const XAI_CREDENTIAL_PATH = path.join(APP_DIR, "xai_credentials.json")
+const CLAUDE_CREDENTIAL_PATH = path.join(APP_DIR, "claude_oauth.json")
 const CONFIG_PATH = path.join(APP_DIR, "config.json")
 
 export const PATHS = {
   APP_DIR,
   GITHUB_TOKEN_PATH,
+  GITHUB_ACCOUNTS_PATH,
   CODEX_CREDENTIAL_PATH,
   XAI_CREDENTIAL_PATH,
+  CLAUDE_CREDENTIAL_PATH,
   CONFIG_PATH,
 }
 

@@ -3,6 +3,10 @@ import os from "node:os"
 
 import { getGrokBuildVersion } from "~/lib/grok-build"
 import { XAI_API_BASE_URL } from "~/lib/oauth/xai"
+import {
+  fetchClaudeOAuthUsage,
+  getClaudeAccessToken,
+} from "~/lib/claude-code/oauth"
 import { resolveProviderConfig } from "~/lib/provider-resolver"
 import { readXaiCredentials } from "~/lib/xai-token"
 import { isGitHubCopilotEnabled } from "~/lib/github-copilot-provider"
@@ -134,6 +138,28 @@ const opencodeGoUsage = z.object({
     weekly: opencodeGoWindow.nullish(),
     monthly: opencodeGoWindow.nullish(),
   }),
+})
+
+// GET https://api.anthropic.com/api/oauth/usage with the subscription token.
+// The endpoint is undocumented; every window is optional because plan tiers
+// differ. `resets_at` is an ISO timestamp.
+const claudeUsageWindow = z.object({
+  utilization: number.nullish(),
+  resets_at: z.string().nullish(),
+})
+const claudeUsage = z.object({
+  five_hour: claudeUsageWindow.nullish(),
+  seven_day: claudeUsageWindow.nullish(),
+  seven_day_opus: claudeUsageWindow.nullish(),
+  seven_day_sonnet: claudeUsageWindow.nullish(),
+  extra_usage: z
+    .object({
+      is_enabled: z.boolean().nullish(),
+      monthly_limit: number.nullish(),
+      used_credits: number.nullish(),
+      utilization: number.nullish(),
+    })
+    .nullish(),
 })
 
 export function normalizeOpencodeGoUsage(value: unknown): SubscriptionUsage {
@@ -300,6 +326,65 @@ function parseResetDate(value: string | null | undefined): number | undefined {
   return Number.isFinite(milliseconds) ? milliseconds / 1000 : undefined
 }
 
+export function normalizeClaudeUsage(value: unknown): SubscriptionUsage {
+  const usage = claudeUsage.parse(value)
+  const windows: Array<SubscriptionQuotaWindow> = []
+  const addWindow = (
+    id: string,
+    window:
+      | { utilization?: number | null; resets_at?: string | null }
+      | null
+      | undefined,
+    windowSeconds: number,
+    name?: string,
+  ): void => {
+    if (!window) return
+    const usedPercent = window.utilization ?? undefined
+    const resetAt = parseResetDate(window.resets_at)
+    if (usedPercent === undefined && resetAt === undefined) return
+    windows.push({
+      id,
+      kind: "usage",
+      name,
+      windowSeconds,
+      usedPercent,
+      resetAt,
+      limitReached: (usedPercent ?? 0) >= 100,
+    })
+  }
+  addWindow("anthropic:five_hour", usage.five_hour, 5 * 60 * 60)
+  addWindow("anthropic:seven_day", usage.seven_day, 7 * 24 * 60 * 60)
+  addWindow(
+    "anthropic:seven_day_opus",
+    usage.seven_day_opus,
+    7 * 24 * 60 * 60,
+    "Opus",
+  )
+  addWindow(
+    "anthropic:seven_day_sonnet",
+    usage.seven_day_sonnet,
+    7 * 24 * 60 * 60,
+    "Sonnet",
+  )
+
+  const extra = usage.extra_usage
+  if (extra?.is_enabled && extra.utilization != null) {
+    windows.push({
+      id: "anthropic:extra_usage",
+      kind: "on-demand",
+      period: "monthly",
+      usedPercent: extra.utilization,
+      limitReached: extra.utilization >= 100,
+    })
+  }
+
+  return {
+    provider: "anthropic",
+    windows,
+    limitReached: windows.some((window) => window.limitReached === true),
+  }
+}
+
 export function normalizeXaiUsage(value: unknown): SubscriptionUsage {
   const usage = xaiUsage.parse(value)
   const config = usage.config
@@ -385,6 +470,11 @@ export async function getSubscriptionUsage(
       signal ? AbortSignal.any([signal, timeout]) : timeout,
     )
     return usage ? normalizeCopilotUsage(usage) : null
+  }
+  if (provider === "anthropic") {
+    if (!(await getClaudeAccessToken())) return null
+    const value = await fetchClaudeOAuthUsage({ signal })
+    return normalizeClaudeUsage(value)
   }
   const config = await resolveProviderConfig(provider)
   if (!config) return null

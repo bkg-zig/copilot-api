@@ -26,6 +26,8 @@ export interface State {
 
   copilotApiUrl?: string
   tokenBasedBilling?: boolean
+  /** Why the last Copilot start failed, shown in the dashboard. */
+  copilotSetupError?: string
 }
 
 export const state: State = {

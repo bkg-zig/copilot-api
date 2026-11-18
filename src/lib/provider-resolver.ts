@@ -10,6 +10,7 @@ import {
 import { state } from "~/lib/state"
 import { setupCodexToken } from "~/lib/token"
 import { getXaiAccessToken } from "~/lib/xai-token"
+import { getClaudeAccessToken } from "~/lib/claude-code/oauth"
 import { XAI_API_BASE_URL } from "~/lib/oauth/xai"
 
 const AZURE_OPENAI_SCOPE = "https://cognitiveservices.azure.com/.default"
@@ -64,6 +65,15 @@ export async function resolveProviderConfig(
     return null
   }
 
+  if (normalizedProviderName === "chatgpt") {
+    // ChatGPT web signs in with the user's own browser login (the session
+    // cookie in the provider config, see services/chatgpt/cookie-session.ts).
+    // It never touches the Codex accounts, whose quota stays reserved for
+    // Codex requests.
+    const providerConfig = getProviderConfig(normalizedProviderName)
+    return providerConfig ? { ...providerConfig, type: "chatgpt" } : null
+  }
+
   if (normalizedProviderName === "codex") {
     const rawProviderConfig = getRawProviderConfig(normalizedProviderName)
     if (rawProviderConfig?.enabled === false) {
@@ -103,6 +113,13 @@ export async function resolveProviderConfig(
           apiKey: accessToken,
         }
       : null
+  }
+  if (
+    providerConfig?.name === "anthropic"
+    && providerConfig.authType === "oauth2"
+  ) {
+    const accessToken = await getClaudeAccessToken()
+    return accessToken ? { ...providerConfig, apiKey: accessToken } : null
   }
   if (providerConfig?.authType !== "azure-entra") {
     return providerConfig

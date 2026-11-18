@@ -168,7 +168,10 @@ async function getProviderCodexCandidates(
 
 function isMessagesFallbackProviderType(type: ProviderType): boolean {
   return (
-    type === "anthropic" || type === "openai-compatible" || type === "google"
+    type === "anthropic"
+    || type === "openai-compatible"
+    || type === "google"
+    || type === "chatgpt"
   )
 }
 

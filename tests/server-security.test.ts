@@ -110,6 +110,25 @@ describe("network-exposed server policy", () => {
     )
   })
 
+  test("honors an explicit CORS origin allowlist", async () => {
+    const app = createServer({
+      networkExposed: true,
+      allowedOrigins: ["https://dash.example.com"],
+    })
+    const allowed = await app.request("http://gateway.example.com/", {
+      headers: { origin: "https://dash.example.com" },
+    })
+    const denied = await app.request("http://gateway.example.com/", {
+      headers: { origin: "https://attacker.example.com" },
+    })
+
+    expect(allowed.headers.get("access-control-allow-origin")).toBe(
+      "https://dash.example.com",
+    )
+    expect(allowed.headers.get("access-control-allow-credentials")).toBe("true")
+    expect(denied.headers.has("access-control-allow-origin")).toBe(false)
+  })
+
   test("keeps wildcard CORS for the default loopback server", async () => {
     const app = createServer()
     const response = await app.request("http://127.0.0.1/", {
