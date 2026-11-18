@@ -27,3 +27,9 @@ dist/
 
 # mac
 .DS_Store
+.dirfd-probe-*
+*.mp3
+gitspit-smoke-logs/*
+cookies.txt
+vendor/*
+scripts/*
