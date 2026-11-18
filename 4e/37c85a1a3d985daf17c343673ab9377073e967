@@ -1,0 +1,335 @@
+src/lib/provider-model-catalog.ts
+  s_de07b3b0e34fbc::t_f31a300c342944 47,50-89,114-116
+update-config.sh
+  s_de07b3b0e34fbc::t_f31a300c342944 1-44
+src/lib/github-accounts.ts
+  s_de07b3b0e34fbc::t_f31a300c342944 1-365
+tests/subscription-usage.test.ts
+  s_de07b3b0e34fbc::t_f31a300c342944 14,18,662-744
+  s_de07b3b0e34fbc::t_9156a2fbe49388 745
+src/services/web/gemini.ts
+  s_de07b3b0e34fbc::t_f31a300c342944 1-156
+src/routes/models/codex-model-candidates.ts
+  s_de07b3b0e34fbc::t_f31a300c342944 171-174
+tests/fixtures/chatgpt-web.ts
+  s_de07b3b0e34fbc::t_f31a300c342944 1-238
+src/routes/alpha-search/route.ts
+  s_de07b3b0e34fbc::t_f31a300c342944 274-276
+tests/github-accounts.test.ts
+  s_de07b3b0e34fbc::t_f31a300c342944 1-385
+src/lib/oauth-accounts.ts
+  s_de07b3b0e34fbc::t_f31a300c342944 7,27-32,38-43,91-114
+  s_de07b3b0e34fbc::t_cc9d63887c093f 115
+src/lib/logger.ts
+  s_de07b3b0e34fbc::t_f31a300c342944 8,303
+tests/health-diagnostics.test.ts
+  s_de07b3b0e34fbc::t_f31a300c342944 1-54
+tests/usage-viewer-subscriptions.test.ts
+  s_de07b3b0e34fbc::t_f31a300c342944 366-368,392-396,404,410,420-421,424,428,450-454,458-460,526-527,532
+tests/provider-key-pool.test.ts
+  s_de07b3b0e34fbc::t_f31a300c342944 1-418
+src/routes/provider/responses/handler.ts
+  s_de07b3b0e34fbc::t_f31a300c342944 252
+src/services/web/fetch-capture.ts
+  s_de07b3b0e34fbc::t_f31a300c342944 1-80
+src/services/github/get-user.ts
+  s_de07b3b0e34fbc::t_f31a300c342944 6-9,18,33
+src/lib/provider-key-pool.ts
+  s_de07b3b0e34fbc::t_f31a300c342944 1-127
+src/routes/messages/handler.ts
+  s_de07b3b0e34fbc::t_f31a300c342944 11,13,16,34-35,79,91-109,112-114,267-281
+  s_de07b3b0e34fbc::t_615c5ccc8623ce 282
+docs/ghostclaw-webapi-sidecar.md
+  s_de07b3b0e34fbc::t_f31a300c342944 1-121
+src/services/web/deepseek.ts
+  s_de07b3b0e34fbc::t_f31a300c342944 1-279
+src/lib/github-error-message.ts
+  s_de07b3b0e34fbc::t_f31a300c342944 1-57
+src/services/providers/provider-proxy.ts
+  s_de07b3b0e34fbc::t_f31a300c342944 13-21,33,35-37,84-99,103,106-111,115,117,148-162,166-179,265-338,348-350,357-363,375-403,406-408,415-421,435-437,442,444-451,465-495,506,512,515-518,569-571,587-592,617-631
+tests/redact.test.ts
+  s_de07b3b0e34fbc::t_f31a300c342944 1-175
+src/routes/admin/diagnostics/route.ts
+  s_de07b3b0e34fbc::t_f31a300c342944 1-11
+package.json
+  s_de07b3b0e34fbc::t_f31a300c342944 67,81
+src/services/chatgpt/web-client.ts
+  s_de07b3b0e34fbc::t_f31a300c342944 1-180
+src/services/chatgpt/sse.ts
+  s_de07b3b0e34fbc::t_f31a300c342944 1-54
+tests/codex-web-login.test.ts
+  s_de07b3b0e34fbc::t_f31a300c342944 1-144
+pnpm-workspace.yaml
+  s_de07b3b0e34fbc::t_f31a300c342944 1-2
+src/lib/state.ts
+  s_de07b3b0e34fbc::t_f31a300c342944 29-30
+tests/chatgpt-web-cookie-session.test.ts
+  s_de07b3b0e34fbc::t_f31a300c342944 1-434
+tests/config-reload.test.ts
+  s_de07b3b0e34fbc::t_f31a300c342944 11,16,225-294
+  s_de07b3b0e34fbc::t_6ddc40caa8e720 295
+src/routes/provider/messages/handlers/openai-compatible.ts
+  s_de07b3b0e34fbc::t_f31a300c342944 370-384
+src/services/web/rate-limit.ts
+  s_de07b3b0e34fbc::t_f31a300c342944 1-62
+src/routes/provider/messages/handler.ts
+  s_de07b3b0e34fbc::t_f31a300c342944 146-147
+src/routes/admin/web/route.ts
+  s_de07b3b0e34fbc::t_f31a300c342944 1-340
+tests/create-responses-websocket-pool.test.ts
+  s_de07b3b0e34fbc::t_f31a300c342944 1361-1389
+update_voice_provider.py
+  s_de07b3b0e34fbc::t_f31a300c342944 1-70
+tests/chatgpt-web-tool-calls.test.ts
+  s_de07b3b0e34fbc::t_f31a300c342944 1-177
+tests/create-messages-headers.test.ts
+  s_de07b3b0e34fbc::t_f31a300c342944 18,86-93
+src/lib/claude-code/provider.ts
+  s_de07b3b0e34fbc::t_f31a300c342944 1-18
+tests/github-accounts-route.test.ts
+  s_de07b3b0e34fbc::t_f31a300c342944 1-582
+tests/web-adapters.test.ts
+  s_de07b3b0e34fbc::t_f31a300c342944 1-171
+tests/builtin-provider-config.test.ts
+  s_de07b3b0e34fbc::t_f31a300c342944 25,166-173
+src/services/chatgpt/delta-stream.ts
+  s_de07b3b0e34fbc::t_f31a300c342944 1-449
+src/routes/messages/completions-stream-translation.ts
+  s_de07b3b0e34fbc::t_f31a300c342944 30-35,46
+src/services/github/get-device-code.ts
+  s_de07b3b0e34fbc::t_f31a300c342944 4-6,17
+tests/chatgpt-web-prompt.test.ts
+  s_de07b3b0e34fbc::t_f31a300c342944 1-241
+src/routes/usage/route.ts
+  s_de07b3b0e34fbc::t_f31a300c342944 16
+src/services/web/types.ts
+  s_de07b3b0e34fbc::t_f31a300c342944 1-118
+src/lib/quick-providers.ts
+  s_de07b3b0e34fbc::t_f31a300c342944 11-16
+src/lib/diagnostics.ts
+  s_de07b3b0e34fbc::t_f31a300c342944 1-69
+src/routes/provider/chat-completions/handler.ts
+  s_de07b3b0e34fbc::t_f31a300c342944 54-59
+tests/opencode.test.ts
+  s_de07b3b0e34fbc::t_f31a300c342944 6-10,81-127
+src/lib/provider-resolver.ts
+  s_de07b3b0e34fbc::t_f31a300c342944 13,68-76,117-123
+src/lib/responses-continuation/index.ts
+  s_de07b3b0e34fbc::t_f31a300c342944 120-127,135
+src/services/chatgpt/tool-calls.ts
+  s_de07b3b0e34fbc::t_f31a300c342944 1-223
+src/services/subscription-usage.ts
+  s_de07b3b0e34fbc::t_f31a300c342944 6-9,143-164,329-387,474-478
+src/lib/redact.ts
+  s_de07b3b0e34fbc::t_f31a300c342944 1-134
+src/services/web/stream.ts
+  s_de07b3b0e34fbc::t_f31a300c342944 1-222
+src/lib/config-store.ts
+  s_de07b3b0e34fbc::t_f31a300c342944 11-131,138,140-143,184-225,295,301-302,307-321,328,334-344,359-365,370-373,378-398
+src/lib/provider-config.ts
+  s_de07b3b0e34fbc::t_f31a300c342944 26-30,37-42,48-53,74,93-97,102,111-121,128-169,176,181,224-232,245-253,259-260,262,281,287-304,306-312
+eslint.config.js
+  s_de07b3b0e34fbc::t_f31a300c342944 14
+src/lib/mailer.ts
+  s_de07b3b0e34fbc::t_f31a300c342944 1-111
+src/lib/config-reload.ts
+  s_de07b3b0e34fbc::t_f31a300c342944 7-8,24,54,84-98
+src/lib/xai-token.ts
+  s_de07b3b0e34fbc::t_f31a300c342944 44
+src/lib/types/oauth.ts
+  s_de07b3b0e34fbc::t_f31a300c342944 12-20
+src/services/chatgpt/errors.ts
+  s_de07b3b0e34fbc::t_f31a300c342944 1-159
+src/lib/codex-capabilities.ts
+  s_de07b3b0e34fbc::t_f31a300c342944 1-267
+tests/server-security.test.ts
+  s_de07b3b0e34fbc::t_f31a300c342944 113-131
+src/services/chatgpt/get-models.ts
+  s_de07b3b0e34fbc::t_f31a300c342944 81,88-322
+  s_de07b3b0e34fbc::t_4a3c5cf28b8539 1-80,82-87,323-351
+src/lib/admin-config.ts
+  s_de07b3b0e34fbc::t_f31a300c342944 1-372
+src/lib/types/subscription-usage.ts
+  s_de07b3b0e34fbc::t_f31a300c342944 6
+setup-voice-provider.sh
+  s_de07b3b0e34fbc::t_f31a300c342944 1-43
+src/lib/combo.ts
+  s_de07b3b0e34fbc::t_f31a300c342944 1-105
+docker-compose.yaml
+  s_de07b3b0e34fbc::t_f31a300c342944 3-4,53,67-73,102-103,120-123,127-128,134-151
+src/services/github/get-copilot-token.ts
+  s_de07b3b0e34fbc::t_f31a300c342944 5,8-14,18-19,25-28,30-33
+tests/claude-oauth-login.test.ts
+  s_de07b3b0e34fbc::t_f31a300c342944 1-574
+tests/chatgpt-web-chat-completions.test.ts
+  s_de07b3b0e34fbc::t_f31a300c342944 1-672
+src/server.ts
+  s_de07b3b0e34fbc::t_f31a300c342944 16-18,20,38,59,64-81,87-97,106-107,117-128,131-132,137-138,141-143
+desktop/src/lib/subscription-providers.ts
+  s_de07b3b0e34fbc::t_f31a300c342944 19-23
+src/services/web/inception.ts
+  s_de07b3b0e34fbc::t_f31a300c342944 1-133
+tests/auth-login.test.ts
+  s_de07b3b0e34fbc::t_f31a300c342944 98
+docs/plan.md
+  s_de07b3b0e34fbc::t_f31a300c342944 1-227
+pages/index.html
+  s_de07b3b0e34fbc::t_f31a300c342944 13,21,92,211,310,378,420,433,496,573-574,581-585,587-588,594-599,602-605,608-614,616-617,620-621,623-625,627-629,637,640-641,643,645-1292,1295-1337,1346-1357,1395-1433,1446,1476,1504-1505,1524-1525,1531-1532,1535-1541,1545-1546,1550-1557,1594-1597,1601-1602,1612-1634,1645-1653,1659-1684,2015-2019,2191-2196,2198-2212,2214,2440-2655,2733,2748-2756,2865-2867,2872-2878,3786-3798,3800-3826,3828-3830,3835-3847,3849-4132,4134,4136-4138,4140,4142-4143,4145-4159,4162-4166,4169-4571,4749-4750,4753-4754,4845-4849,4866-4883,4885-4919,4921-4950,4952,4955-4963,4965-4973,4975-4989,4991-4996,4998-5035,5038-6356
+  s_de07b3b0e34fbc::t_d15dbef2b64a40 6357
+Dockerfile
+  s_de07b3b0e34fbc::t_f31a300c342944 15-16
+src/routes/responses/handler.ts
+  s_de07b3b0e34fbc::t_f31a300c342944 7,9,12,31-32,74,80-100,102-104,124-138
+  s_de07b3b0e34fbc::t_3760f7ec16f258 139
+src/lib/request-auth.ts
+  s_de07b3b0e34fbc::t_f31a300c342944 13-14,112,127
+  s_de07b3b0e34fbc::t_8e8226415df43f 128-130
+src/lib/oauth/github-device-login.ts
+  s_de07b3b0e34fbc::t_f31a300c342944 1-307
+src/services/web/grok.ts
+  s_de07b3b0e34fbc::t_f31a300c342944 1-157
+tests/chatgpt-web-client.test.ts
+  s_de07b3b0e34fbc::t_f31a300c342944 1-380
+tests/chatgpt-web-models.test.ts
+  s_de07b3b0e34fbc::t_f31a300c342944 1-212
+src/lib/token.ts
+  s_de07b3b0e34fbc::t_f31a300c342944 38-42,135-147,154-155,165,181,189-203,208
+tests/web-admin-route.test.ts
+  s_de07b3b0e34fbc::t_f31a300c342944 1-151
+docker-compose.override.yaml
+  s_de07b3b0e34fbc::t_f31a300c342944 1-50
+src/services/web/qwen.ts
+  s_de07b3b0e34fbc::t_f31a300c342944 1-192
+src/lib/config.ts
+  s_de07b3b0e34fbc::t_f31a300c342944 4
+tests/get-copilot-token.test.ts
+  s_de07b3b0e34fbc::t_f31a300c342944 68-91,101-113
+plan.md
+  s_de07b3b0e34fbc::t_f31a300c342944 1-80
+src/services/chatgpt/chat-completions.ts
+  s_de07b3b0e34fbc::t_f31a300c342944 1-607
+src/routes/provider/models/route.ts
+  s_de07b3b0e34fbc::t_f31a300c342944 12-18,47-80,165-167
+src/services/web/claude.ts
+  s_de07b3b0e34fbc::t_f31a300c342944 1-196
+src/lib/users.ts
+  s_de07b3b0e34fbc::t_f31a300c342944 1-449
+src/lib/credential-store.ts
+  s_de07b3b0e34fbc::t_f31a300c342944 7,12-15,23-24,38-39,325-345,349-350,489,619-629,690-727
+  s_de07b3b0e34fbc::t_19d69ce75560fc 728
+src/routes/admin/config/route.ts
+  s_de07b3b0e34fbc::t_f31a300c342944 1,4-13,16-25,27-28,30-76,84-91,136-1034
+tests/chatgpt-web-delta-stream.test.ts
+  s_de07b3b0e34fbc::t_f31a300c342944 1-482
+src/routes/chat-completions/handler.ts
+  s_de07b3b0e34fbc::t_f31a300c342944 7-9,37,39-59,61
+docs/guides/en/api.md
+  s_de07b3b0e34fbc::t_f31a300c342944 29-48
+src/lib/claude-code/oauth.ts
+  s_de07b3b0e34fbc::t_f31a300c342944 1-638
+src/services/responses-websocket-continuation.ts
+  s_de07b3b0e34fbc::t_f31a300c342944 70,73-75
+src/services/web/chatgpt.ts
+  s_de07b3b0e34fbc::t_f31a300c342944 1-59
+src/services/web/registry.ts
+  s_de07b3b0e34fbc::t_f31a300c342944 1-35
+tests/credential-store.test.ts
+  s_de07b3b0e34fbc::t_f31a300c342944 20,24,79,289,326,360-404
+  s_de07b3b0e34fbc::t_0862d677564e7b 405-406
+src/lib/opencode.ts
+  s_de07b3b0e34fbc::t_f31a300c342944 2,6,8,10,19-24,26,30-40,64-82,102-124,127-147,149-150
+src/routes/auth/route.ts
+  s_de07b3b0e34fbc::t_f31a300c342944 1-532
+src/routes/models/model-discovery.ts
+  s_de07b3b0e34fbc::t_f31a300c342944 8-10,32,35,229-244,426,428-433,460-583,588,593-596
+src/routes/health/route.ts
+  s_de07b3b0e34fbc::t_f31a300c342944 1-10
+src/services/chatgpt/cookie-session.ts
+  s_de07b3b0e34fbc::t_f31a300c342944 1-407
+src/services/chatgpt/sentinel.ts
+  s_de07b3b0e34fbc::t_f31a300c342944 1-260
+src/lib/paths.ts
+  s_de07b3b0e34fbc::t_f31a300c342944 16-22,25,31,34
+src/services/chatgpt/prompt.ts
+  s_de07b3b0e34fbc::t_f31a300c342944 1-322
+tests/codex-device-login.test.ts
+  s_de07b3b0e34fbc::t_f31a300c342944 1-288
+src/auth.ts
+  s_de07b3b0e34fbc::t_f31a300c342944 110
+src/start.ts
+  s_de07b3b0e34fbc::t_f31a300c342944 11,77-112,188,191,207-218,223
+.gitignore
+  h_76ea00ebfa3ec3 36-37
+tests/chatgpt-web-provider.test.ts
+  s_de07b3b0e34fbc::t_f31a300c342944 1-348
+tests/combo.test.ts
+  s_de07b3b0e34fbc::t_f31a300c342944 1-150
+tests/dashboard-users.test.ts
+  s_de07b3b0e34fbc::t_f31a300c342944 1-788
+src/routes/admin/config/github-accounts-route.ts
+  s_de07b3b0e34fbc::t_f31a300c342944 1-339
+tests/github-device-login.test.ts
+  s_de07b3b0e34fbc::t_f31a300c342944 1-432
+src/lib/oauth/codex.ts
+  s_de07b3b0e34fbc::t_f31a300c342944 14-16,93,231-244,256,459-478,526-552,554-555
+  s_de07b3b0e34fbc::t_4b59587afcc4d5 553,556-557
+tests/mailer.test.ts
+  s_de07b3b0e34fbc::t_f31a300c342944 1-96
+desktop/src/pages/SubscriptionsPage.tsx
+  s_de07b3b0e34fbc::t_f31a300c342944 9
+tests/provider-model-filter.test.ts
+  s_de07b3b0e34fbc::t_f31a300c342944 1-89
+src/lib/router.ts
+  s_de07b3b0e34fbc::t_f31a300c342944 1-302
+tests/start-copilot-fallback.test.ts
+  s_de07b3b0e34fbc::t_f31a300c342944 1-80
+tests/provider-resolver.test.ts
+  s_de07b3b0e34fbc::t_f31a300c342944 165,168-208
+  s_de07b3b0e34fbc::t_ab6891768730ad 166-167
+tasks.md
+  s_de07b3b0e34fbc::t_f31a300c342944 1-69
+tests/github-error-message.test.ts
+  s_de07b3b0e34fbc::t_f31a300c342944 1-88
+src/lib/oauth/codex-device-login.ts
+  s_de07b3b0e34fbc::t_f31a300c342944 1-280
+src/lib/oauth/codex-web-login.ts
+  s_de07b3b0e34fbc::t_f31a300c342944 1-136
+.dockerignore
+  s_de07b3b0e34fbc::t_f31a300c342944 37-45
+src/services/web/http.ts
+  s_de07b3b0e34fbc::t_f31a300c342944 1-79
+src/services/chatgpt/models.ts
+  s_de07b3b0e34fbc::t_f31a300c342944 1-276
+src/lib/model-policy.ts
+  s_de07b3b0e34fbc::t_f31a300c342944 8-12,15-22,108-252,283-455
+src/lib/oauth/xai-device-login.ts
+  s_de07b3b0e34fbc::t_f31a300c342944 61-386,407
+  s_de07b3b0e34fbc::t_7eff05a5a10284 1-60,387-406,408-427
+tests/chatgpt-web-sse.test.ts
+  s_de07b3b0e34fbc::t_f31a300c342944 1-83
+bun.lock
+  s_de07b3b0e34fbc::t_4d4fe7a5d2fc96 18,32,58-89,248-259,270-271,356-357,714-715
+pnpm-lock.yaml
+  s_de07b3b0e34fbc::t_2ddb02f4b6afa9 1-3861
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "4e37c85a1a3d985daf17c343673ab9377073e967",
+  "prompts": {},
+  "humans": {
+    "h_76ea00ebfa3ec3": {
+      "author": "bkg <bkg@skill.eysho.info>"
+    }
+  },
+  "sessions": {
+    "s_de07b3b0e34fbc": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_e1e6218fcffesVtPOhPc16cIqs",
+        "model": "big-pickle"
+      },
+      "human_author": "bkg <bkg@skill.eysho.info>"
+    }
+  }
+}
