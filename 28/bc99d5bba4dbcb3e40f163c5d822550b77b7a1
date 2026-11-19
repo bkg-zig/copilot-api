@@ -1,0 +1,23 @@
+docs/plans/state-owner-plan.md
+  s_de07b3b0e34fbc::t_2c50c08b3d2626 1-235,266-294,301-306
+  s_de07b3b0e34fbc::t_fb67bf947575f6 295-300
+  s_de07b3b0e34fbc::t_0661e0282e4107 236-265
+questions.md
+  s_de07b3b0e34fbc::t_9f513656843da5 1-158
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "28bc99d5bba4dbcb3e40f163c5d822550b77b7a1",
+  "prompts": {},
+  "sessions": {
+    "s_de07b3b0e34fbc": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_e1e6218fcffesVtPOhPc16cIqs",
+        "model": "big-pickle"
+      },
+      "human_author": "bkg <bkg@skill.eysho.info>"
+    }
+  }
+}
