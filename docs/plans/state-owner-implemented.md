@@ -1,7 +1,8 @@
 # State Owner: umgesetzt (Plan state-owner-plan)
 
-Status: umgesetzt (Phasen 0–6). Commit-Vorschlag:
+Status: umgesetzt (Phasen 0–6). Commit `dcfe40b`
 `feat(state): Postgres state owner with migration and dashboard menus`
+auf Branch `mango` (Custom). Branch `tango` bleibt reines Original.
 
 ## Was umgesetzt wurde
 
