@@ -65,6 +65,7 @@
     "gpt-tokenizer": "^3.0.1",
     "hono": "^4.13.11",
     "nodemailer": "7.0.10",
+    "postgres": "^4.1.1",
     "proxy-from-env": "^1.1.0",
     "srvx": "^0.11.15",
     "stream-chain": "^4.4.1",
