@@ -1,0 +1,14 @@
+docs/plans/state-owner-implemented.md
+  h_76ea00ebfa3ec3 3,5
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "0bc2bdb61fe7d19687f61edeb4c17462bdfdfe2c",
+  "prompts": {},
+  "humans": {
+    "h_76ea00ebfa3ec3": {
+      "author": "bkg <bkg@skill.eysho.info>"
+    }
+  }
+}
