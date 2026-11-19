@@ -1,0 +1,14 @@
+docs/plans/linux-server-admin-webui-spezifikation.md
+  h_76ea00ebfa3ec3 1-160
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "a36d7c6a4c45d6cfb99ddc436e26c4fabf6052b3",
+  "prompts": {},
+  "humans": {
+    "h_76ea00ebfa3ec3": {
+      "author": "bkg <bkg@skill.eysho.info>"
+    }
+  }
+}
