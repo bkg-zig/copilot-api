@@ -100,11 +100,11 @@ export function isCreatorAllowedPath(path: string): boolean {
   )
 }
 
-export function isApiKeyUsageIsolated(): boolean {
-  return (
-    !!requestContext.getStore()?.apiKey
-    && getConfig().auth?.isolateApiKeyUsage === true
-  )
+export function getIsolatedApiKeyId(): string | undefined {
+  const id = requestContext.getStore()?.apiKey?.id
+  return id !== undefined && getConfig().auth?.isolateApiKeyUsage === true ?
+      id
+    : undefined
 }
 
 export function extractRequestApiKey(c: Context): string | null {
@@ -143,7 +143,9 @@ function createUnauthorizedResponse(c: Context): Response {
 export function createAuthMiddleware(
   options: AuthMiddlewareOptions = {},
 ): MiddlewareHandler {
-  const getApiKeys = options.getApiKeys ?? getConfiguredApiKeys
+  // The configured-key reader uses managed policies even when passed explicitly.
+  const getApiKeys =
+    options.getApiKeys === getConfiguredApiKeys ? undefined : options.getApiKeys
   const allowUnauthenticatedPaths = options.allowUnauthenticatedPaths ?? ["/"]
   const allowOptionsBypass = options.allowOptionsBypass ?? true
   const allowWhenNoApiKeys = options.allowWhenNoApiKeys ?? true
@@ -151,15 +153,11 @@ export function createAuthMiddleware(
   const isAuthorizedBySession = options.isAuthorizedBySession ?? (() => false)
 
   return async (c, next) => {
-    if (allowOptionsBypass && c.req.method === "OPTIONS") {
-      return next()
-    }
-
-    if (shouldSkipPath(c.req.path)) {
-      return next()
-    }
-
-    if (allowUnauthenticatedPaths.includes(c.req.path)) {
+    if (
+      (allowOptionsBypass && c.req.method === "OPTIONS")
+      || shouldSkipPath(c.req.path)
+      || allowUnauthenticatedPaths.includes(c.req.path)
+    ) {
       return next()
     }
 
@@ -167,28 +165,30 @@ export function createAuthMiddleware(
       return next()
     }
 
-    const apiKeys = getApiKeys()
+    const auth = getApiKeys ? undefined : getConfig().auth
+    const apiKeys =
+      getApiKeys ? getApiKeys() : normalizeApiKeyRecords(auth?.apiKeyConfigs)
     if (apiKeys.length === 0) {
       return allowWhenNoApiKeys ? next() : createUnauthorizedResponse(c)
     }
 
     const requestApiKey = extractRequestApiKey(c)
-    if (!requestApiKey || !apiKeys.includes(requestApiKey)) {
-      return createUnauthorizedResponse(c)
-    }
+    if (!requestApiKey) return createUnauthorizedResponse(c)
 
-    if (getApiKeys === getConfiguredApiKeys) {
-      const key = normalizeApiKeyRecords(getConfig().auth?.apiKeyConfigs).find(
-        (entry) => entry.key === requestApiKey,
-      )
-      if (!key || !isApiKeyActive(key)) return createUnauthorizedResponse(c)
-      const context = requestContext.getStore()
-      if (context) context.apiKey = key
-      c.header(
-        "X-API-Key-Usage-Isolated",
-        String(getConfig().auth?.isolateApiKeyUsage === true),
-      )
-    }
+    const key = apiKeys.find((entry) => {
+      if (typeof entry === "string") return entry === requestApiKey
+      return !getApiKeys && entry.key === requestApiKey
+    })
+    if (key === undefined) return createUnauthorizedResponse(c)
+    if (typeof key === "string") return next()
+    if (!isApiKeyActive(key)) return createUnauthorizedResponse(c)
+
+    const context = requestContext.getStore()
+    if (context) context.apiKey = key
+    c.header(
+      "X-API-Key-Usage-Isolated",
+      String(auth?.isolateApiKeyUsage === true),
+    )
     return next()
   }
 }
