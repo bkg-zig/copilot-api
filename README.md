@@ -117,6 +117,7 @@ After the initial full-package installation, subsequent updates normally use dif
 | [Desktop App](docs/guides/en/desktop.md) | Copilot sign-in, Codex OAuth account switching, API-key providers, one-click start / stop, shared model mappings, advanced settings, and per-platform installers |
 | [Plugins and Tool Search](docs/guides/en/integrations.md) | The Responses `tool_search` MCP bridge (not needed on opencode v2, which already defers tools through Code Mode), Claude Code `agent-inject` and `tool-search` marketplace plugins, and the OpenCode session context plugin |
 | [Gateway event plugins](docs/guides/en/gateway-plugins.md) | Observe request state, timing, and usage with server-side plugins |
+| [Goal-Anchored Memory](docs/guides/en/memory.md) | Per-project agent memory in the gateway: a pinned goal, strength-ranked steps, and the HTTP API |
 | [Usage Monitoring](docs/guides/en/usage.md) | The usage viewer URL and query parameters, period selectors, Copilot quota progress, token and cost metric cards, trend charts, and paginated request events |
 | [CLI Reference](docs/guides/en/cli.md) | Command structure, global options, and the full option sets for the `start`, `auth`, and `debug` subcommands with example usage |
 | [Configuration Reference](docs/guides/en/configuration.md) | Every `config.json` field: gateway and admin API keys, provider definitions, model mappings, WebSocket and HTTP transport, timeouts, and context management |
