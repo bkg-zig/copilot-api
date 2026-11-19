@@ -1,0 +1,19 @@
+docker-compose.override.yaml
+  s_de07b3b0e34fbc::t_8ebbfa955b1775 37-40
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "75a2a47efd72826f2ab0e3da26b04e7b98df1942",
+  "prompts": {},
+  "sessions": {
+    "s_de07b3b0e34fbc": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_e1e6218fcffesVtPOhPc16cIqs",
+        "model": "big-pickle"
+      },
+      "human_author": "bkg <bkg@skill.eysho.info>"
+    }
+  }
+}
