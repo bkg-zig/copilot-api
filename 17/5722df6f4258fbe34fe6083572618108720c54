@@ -1,0 +1,54 @@
+src/routes/admin/api-keys/manage-route.ts
+  s_de07b3b0e34fbc::t_e9c736f62e5fe9 16-19,27-33,37-54
+  s_de07b3b0e34fbc::t_73e98d6ce4e65e 131-133
+  s_de07b3b0e34fbc::t_a68c10ae412ce4 172,202-203
+  s_de07b3b0e34fbc::t_c831eeae7aa61c 15
+  s_de07b3b0e34fbc::t_aaf9d7f6fca1e7 55
+  s_de07b3b0e34fbc::t_ac4e91d56fd79b 134
+src/server.ts
+  s_de07b3b0e34fbc::t_7dc305eee8b820 12
+  s_de07b3b0e34fbc::t_70825d5f7dcda5 27
+  s_de07b3b0e34fbc::t_a1af20c17c2263 202
+  s_de07b3b0e34fbc::t_0f5d4827707f79 191-192
+  s_de07b3b0e34fbc::t_3ded357df9a344 111-114,123,127-130,140-143
+  s_de07b3b0e34fbc::t_95c6764713bede 13
+  s_de07b3b0e34fbc::t_9d7cfb66c2508c 131-139
+  s_cc0e29c8558509::t_9e367091db7dba 144
+pages/index.html
+  s_de07b3b0e34fbc::t_8f842302208746 1539
+  s_de07b3b0e34fbc::t_53792a3fb78e62 1054
+  s_de07b3b0e34fbc::t_b6da28e3846ff0 1443-1454
+  s_cc0e29c8558509::t_10d170e078984d 1442
+src/lib/config-store.ts
+  s_de07b3b0e34fbc::t_bb65e4bbab2e2b 144-149
+src/lib/request-auth.ts
+  s_de07b3b0e34fbc::t_afc869b77c95ea 75-89
+  s_de07b3b0e34fbc::t_714911bccdd60c 90-102
+src/lib/admin-config.ts
+  s_de07b3b0e34fbc::t_7f3c5a7acf8df2 267,276,285,315-319
+  s_de07b3b0e34fbc::t_cfae1d8b7d54e4 320-321
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "175722df6f4258fbe34fe6083572618108720c54",
+  "prompts": {},
+  "sessions": {
+    "s_cc0e29c8558509": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_e0f1c0f22ffeJr07rif02EO19n",
+        "model": "big-pickle"
+      },
+      "human_author": "bkg <bkg@skill.eysho.info>"
+    },
+    "s_de07b3b0e34fbc": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_e1e6218fcffesVtPOhPc16cIqs",
+        "model": "big-pickle"
+      },
+      "human_author": "bkg <bkg@skill.eysho.info>"
+    }
+  }
+}
