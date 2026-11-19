@@ -1,0 +1,63 @@
+src/lib/memory/types.ts
+  s_de07b3b0e34fbc::t_41cb38bb2ab707 1-85
+tests/memory-route.test.ts
+  s_de07b3b0e34fbc::t_d5cf4ae64f80dc 128
+  s_de07b3b0e34fbc::t_984e67114bdb86 1,3-5,97-127,129-183
+  s_de07b3b0e34fbc::t_51c1c4c266d45e 2,6-21,23-96
+  s_de07b3b0e34fbc::t_55e7ec3c48f5a2 22
+src/lib/memory/hash.ts
+  s_de07b3b0e34fbc::t_8dd817753cbaad 1-32
+README.md
+  s_de07b3b0e34fbc::t_eaa0299679f1fc 120
+src/lib/memory/projects.ts
+  s_de07b3b0e34fbc::t_91997be0195850 1-26,28-88
+  s_de07b3b0e34fbc::t_157b68d198c9ac 27
+src/lib/memory/block.ts
+  s_de07b3b0e34fbc::t_157b68d198c9ac 56-57
+  s_de07b3b0e34fbc::t_2294ca8fd48bfd 1-55,58-110
+src/lib/memory/constants.ts
+  s_de07b3b0e34fbc::t_c71bf3ddb846db 1-34,36,38-54
+  s_de07b3b0e34fbc::t_135876791dd996 35,37
+docs/guides/en/memory.md
+  s_de07b3b0e34fbc::t_f95afa9d2ebe47 1-113
+docs/guides/de/memory.md
+  s_de07b3b0e34fbc::t_dcf50774cc3908 1-115
+docs/guides/en/README.md
+  s_de07b3b0e34fbc::t_a408b9425bff70 18
+src/lib/memory/store.ts
+  s_de07b3b0e34fbc::t_65737bbfdbe55c 1-10,12-158,162-341,344-524,543-551,553-571
+  s_de07b3b0e34fbc::t_1d6e616ccc533d 552
+  s_de07b3b0e34fbc::t_a053cc94030142 525,531-542
+  s_de07b3b0e34fbc::t_c3e7cc10d8a775 11
+  s_de07b3b0e34fbc::t_157b68d198c9ac 159-161,342-343,526-530
+tests/memory-store.test.ts
+  s_de07b3b0e34fbc::t_0e68f243fe100a 7-14
+  s_de07b3b0e34fbc::t_d23ad5c4393c9a 1-6,15-26,29-256,258-287
+  s_de07b3b0e34fbc::t_615fc5d7c8c0c2 257
+  s_de07b3b0e34fbc::t_a0f4dbc1d1ee7f 288-455
+  s_de07b3b0e34fbc::t_d5cf4ae64f80dc 27-28
+src/lib/memory/index.ts
+  s_de07b3b0e34fbc::t_b484c6ea9578b3 1-41
+src/routes/memory/route.ts
+  s_de07b3b0e34fbc::t_157b68d198c9ac 53
+  s_de07b3b0e34fbc::t_026d2270043101 139
+  s_de07b3b0e34fbc::t_d96513ad4fcb76 1-10,12-39,41-52,54-138,140-178
+  s_de07b3b0e34fbc::t_86ddc7808ae5ae 11
+  s_de07b3b0e34fbc::t_74115da38eddb7 40
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "2fdbd1138079fcb6928b78582af9922a297f8da1",
+  "prompts": {},
+  "sessions": {
+    "s_de07b3b0e34fbc": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_e1e6218fcffesVtPOhPc16cIqs",
+        "model": "big-pickle"
+      },
+      "human_author": "bkg <bkg@skill.eysho.info>"
+    }
+  }
+}
