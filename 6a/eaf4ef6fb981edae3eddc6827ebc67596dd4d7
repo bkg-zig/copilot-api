@@ -1,0 +1,51 @@
+pages/index.html
+  s_de07b3b0e34fbc::t_1292908d9c2c5a 5672-5881
+  s_de07b3b0e34fbc::t_46e6505648fcf5 5283,5290-5293
+  s_de07b3b0e34fbc::t_5e1f28d7821c0a 5610
+  s_de07b3b0e34fbc::t_cd7554ecee0edb 6687-6697,6711-6714
+  s_de07b3b0e34fbc::t_492c8798b3a019 5308-5310
+  s_de07b3b0e34fbc::t_305ee403cd95e3 5065-5096
+  s_de07b3b0e34fbc::t_75d1107a788e74 1354
+  s_de07b3b0e34fbc::t_5c67cbd8c68411 5270
+  s_de07b3b0e34fbc::t_5401c67af3c8ea 6107
+  s_de07b3b0e34fbc::t_108aea3dff4bae 1708-1711
+  s_de07b3b0e34fbc::t_cab2279859d455 6667-6671
+  s_de07b3b0e34fbc::t_93d5f8b64a2b32 6542,6548,6554-6555,6568-6571,6573-6574,6577
+  s_de07b3b0e34fbc::t_700506da134c9f 5882
+  s_de07b3b0e34fbc::t_bea1cac80b4108 6672-6673
+docs/guides/en/README.md
+  s_de07b3b0e34fbc::t_6ea06a76c4036d 22
+src/lib/api-key-config.ts
+  s_de07b3b0e34fbc::t_166fd8ce441137 1,16-31
+  s_de07b3b0e34fbc::t_b6a3c92daac761 32
+tests/admin-api-key-management.test.ts
+  s_de07b3b0e34fbc::t_37f6f84a27890b 1-155
+src/routes/admin/api-keys/manage-route.ts
+  s_de07b3b0e34fbc::t_db619714871843 1-127,130-157,160-177
+  s_de07b3b0e34fbc::t_2acd8eba2870c6 128-129,158-159
+docs/guides/en/admin-api-keys.md
+  s_de07b3b0e34fbc::t_de2223a5f5c745 1-178
+src/routes/auth/route.ts
+  s_de07b3b0e34fbc::t_247be00b864d8f 403-448
+src/server.ts
+  s_de07b3b0e34fbc::t_b92d58eeb977d0 2,160
+docs/guides/en/api.md
+  s_de07b3b0e34fbc::t_3a7e10001cd15d 46-47
+  s_de07b3b0e34fbc::t_5445567950b6a3 187-191
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "6aeaf4ef6fb981edae3eddc6827ebc67596dd4d7",
+  "prompts": {},
+  "sessions": {
+    "s_de07b3b0e34fbc": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_e1e6218fcffesVtPOhPc16cIqs",
+        "model": "big-pickle"
+      },
+      "human_author": "bkg <bkg@skill.eysho.info>"
+    }
+  }
+}
