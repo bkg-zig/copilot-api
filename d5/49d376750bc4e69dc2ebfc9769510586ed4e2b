@@ -1,0 +1,19 @@
+src/lib/responses-continuation/index.ts
+  s_de07b3b0e34fbc::t_2c79e75f7ef775 183-186
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "d549d376750bc4e69dc2ebfc9769510586ed4e2b",
+  "prompts": {},
+  "sessions": {
+    "s_de07b3b0e34fbc": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_e1e6218fcffesVtPOhPc16cIqs",
+        "model": "big-pickle"
+      },
+      "human_author": "bkg <bkg@skill.eysho.info>"
+    }
+  }
+}
