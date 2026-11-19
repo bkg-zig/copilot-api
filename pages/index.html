@@ -1051,6 +1051,7 @@
     .page-tab[data-tab="providers"] { --tab-ac: var(--neon-azure); --tab-bg: var(--az-16); --tab-line: var(--az-40); --tab-glow: var(--az-glow); }
     .page-tab[data-tab="admin"] { --tab-ac: var(--neon-orange); --tab-bg: var(--or-16); --tab-line: var(--or-40); --tab-glow: var(--or-glow); }
     .page-tab[data-tab="webapi"] { --tab-ac: var(--neon-mint); --tab-bg: var(--mi-08); --tab-line: var(--mi-40); --tab-glow: var(--mi-25); }
+    .page-tab[data-tab="log"] { --tab-ac: var(--neon-cyan); --tab-bg: var(--cy-16); --tab-line: var(--cy-60); --tab-glow: var(--cy-glow); }
     .page-tab { color: var(--tab-ac, var(--text-desc)); }
     .page-tab:hover { color: var(--tab-ac, var(--text-body)); }
     .page-tab[aria-selected="true"] {
@@ -1439,6 +1440,19 @@
               Web API
             </button>
             <button
+              id="log-tab"
+              type="button"
+              class="page-tab"
+              role="tab"
+              data-tab="log"
+              aria-selected="false"
+              aria-controls="content-area"
+              tabindex="-1"
+            >
+              <i data-lucide="scroll-text" class="h-4 w-4" aria-hidden="true"></i>
+              Log
+            </button>
+            <button
               id="admin-tab"
               type="button"
               class="page-tab"
@@ -1522,6 +1536,7 @@
           document.getElementById("subscriptions-tab"),
           document.getElementById("models-tab"),
           document.getElementById("providers-tab"),
+          document.getElementById("log-tab"),
           document.getElementById("admin-tab"),
         ];
         const periodField = document.getElementById("token-usage-period-field");

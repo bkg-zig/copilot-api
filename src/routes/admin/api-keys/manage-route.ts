@@ -13,18 +13,45 @@ import {
   upsertConfiguredApiKey,
 } from "~/lib/config-store"
 import {
+  extractRequestApiKey,
+  getConfiguredAdminApiKeys,
+} from "~/lib/request-auth"
+import { getRequestSession } from "~/routes/auth/route"
+import {
   getApiKeyQuotaUsage,
   getTokenUsageSummary,
 } from "~/lib/token-usage/store"
 import type { GatewayApiKeyConfig } from "~/lib/types/api-key"
 
 /**
- * Admin-only management of gateway client keys: list them with their token
- * usage, create new keys (optionally bound to a model allowlist and quota),
- * update them, or delete them. Mounted under `/admin/api-keys`, which is
- * guarded by the admin API key / admin session middleware in `server.ts`.
+ * Management of gateway client keys: list them with their token usage, create
+ * new keys (optionally bound to a model allowlist and quota), update them, or
+ * delete them. Mounted under `/admin/api-keys`, which is guarded by the admin
+ * key / admin session / restricted creator key middleware in `server.ts`.
+ *
+ * The restricted `auth.apiCreatorApiKey` may only list (`GET`) and create
+ * (`POST`) keys; `PATCH` and `DELETE` require a full admin credential.
  */
 export const apiKeyManagementRoutes = new Hono()
+
+/** Full admin = admin API key or an admin session (not the creator key). */
+async function isFullAdmin(c: Context): Promise<boolean> {
+  if ((await getRequestSession(c))?.role === "admin") return true
+  const key = extractRequestApiKey(c)
+  return Boolean(key && getConfiguredAdminApiKeys().includes(key))
+}
+
+function forbiddenResponse(c: Context) {
+  return c.json(
+    {
+      error: {
+        message: "The API creator key may only list and create keys.",
+        type: "permission_error",
+      },
+    },
+    403,
+  )
+}
 
 interface ApiKeyUsageView {
   usedAmount: number
@@ -101,6 +128,10 @@ function configuredKeys(): Array<GatewayApiKeyConfig> {
   return normalizeApiKeyRecords(getConfig().auth?.apiKeyConfigs)
 }
 
+apiKeyManagementRoutes.get("/access", async (c) => {
+  return c.json({ scope: (await isFullAdmin(c)) ? "admin" : "creator" })
+})
+
 apiKeyManagementRoutes.get("/", async (c) => {
   const keys = configuredKeys()
   const items = await Promise.all(
@@ -138,6 +169,7 @@ apiKeyManagementRoutes.post("/", async (c) => {
 })
 
 apiKeyManagementRoutes.patch("/:id", async (c) => {
+  if (!(await isFullAdmin(c))) return forbiddenResponse(c)
   const id = c.req.param("id")
   const existing = configuredKeys().find((entry) => entry.id === id)
   if (!existing) {
@@ -167,7 +199,8 @@ apiKeyManagementRoutes.patch("/:id", async (c) => {
   }
 })
 
-apiKeyManagementRoutes.delete("/:id", (c) => {
+apiKeyManagementRoutes.delete("/:id", async (c) => {
+  if (!(await isFullAdmin(c))) return forbiddenResponse(c)
   const id = c.req.param("id")
   if (!configuredKeys().some((entry) => entry.id === id)) {
     return errorResponse(c, new Error(`API key '${id}' not found.`), 404)

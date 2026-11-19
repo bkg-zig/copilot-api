@@ -72,6 +72,34 @@ export function getConfiguredAdminApiKeys(): Array<string> {
   return adminApiKey ? [adminApiKey] : []
 }
 
+/**
+ * Restricted "API creator" keys. They are accepted only on the gateway API-key
+ * management routes (`/admin/api-keys*`) and may only list and create keys.
+ */
+export function getConfiguredApiCreatorApiKeys(): Array<string> {
+  const config = getConfig()
+  const creatorApiKey = normalizeApiKey(config.auth?.apiCreatorApiKey)
+  return creatorApiKey ? [creatorApiKey] : []
+}
+
+/** True when the path belongs to the API-key management routes. */
+export function isApiKeyManagementPath(path: string): boolean {
+  return path === "/admin/api-keys" || path.startsWith("/admin/api-keys/")
+}
+
+/**
+ * Paths the restricted "API creator" key may reach: the API-key management
+ * routes (list/create only, enforced in the handlers) and the read-only token
+ * usage/monitoring routes that power the dashboard "Log" view.
+ */
+export function isCreatorAllowedPath(path: string): boolean {
+  return (
+    isApiKeyManagementPath(path)
+    || path === "/admin/token-usage"
+    || path.startsWith("/admin/token-usage/")
+  )
+}
+
 export function isApiKeyUsageIsolated(): boolean {
   return (
     !!requestContext.getStore()?.apiKey

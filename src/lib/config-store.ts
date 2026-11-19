@@ -141,6 +141,12 @@ export interface AppConfig {
     apiKeyConfigs?: Array<GatewayApiKeyConfig>
     isolateApiKeyUsage?: boolean
     adminApiKey?: string
+    /**
+     * Restricted key for the "API creator" role: it may list and create
+     * gateway client keys and read their usage, but cannot touch any other
+     * admin route or modify/delete existing keys. Distinct from adminApiKey.
+     */
+    apiCreatorApiKey?: string
   }
   providers?: Record<string, ProviderConfig>
   // Legacy simple model mappings (source -> target) - kept for backward compatibility

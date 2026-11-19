@@ -264,6 +264,7 @@ export function deleteAdminProvider(name: string): Array<AdminProviderView> {
 export interface AdminKeysView {
   apiKeys: Array<string>
   adminApiKey: string
+  apiCreatorApiKey: string
 }
 
 export function getAdminKeys(): AdminKeysView {
@@ -272,6 +273,7 @@ export function getAdminKeys(): AdminKeysView {
     apiKeys:
       Array.isArray(config.auth?.apiKeys) ? [...config.auth.apiKeys] : [],
     adminApiKey: config.auth?.adminApiKey ?? "",
+    apiCreatorApiKey: config.auth?.apiCreatorApiKey ?? "",
   }
 }
 
@@ -280,6 +282,7 @@ export function setAdminKeys(input: unknown): AdminKeysView {
     .object({
       apiKeys: z.array(z.string()).optional(),
       adminApiKey: z.string().optional(),
+      apiCreatorApiKey: z.string().optional(),
     })
     .strict()
   const parsed = schema.safeParse(input)
@@ -307,6 +310,13 @@ export function setAdminKeys(input: unknown): AdminKeysView {
       throw new Error("The admin API key cannot be empty.")
     }
     auth.adminApiKey = adminApiKey
+  }
+
+  if (parsed.data.apiCreatorApiKey !== undefined) {
+    // An empty value disables the restricted creator key.
+    const apiCreatorApiKey = parsed.data.apiCreatorApiKey.trim()
+    if (apiCreatorApiKey) auth.apiCreatorApiKey = apiCreatorApiKey
+    else delete auth.apiCreatorApiKey
   }
 
   writeConfigToDisk({ ...config, auth })
