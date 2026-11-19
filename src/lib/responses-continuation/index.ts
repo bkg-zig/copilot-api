@@ -180,10 +180,10 @@ export function prepareResponsesContinuation<T extends ResponsesPayload>(
   // When the caller included the full input, the second attempt can be sent as
   // a fresh response. This also keeps the behavior safe for clients that do
   // not use our connection-local continuation checkpoints.
-  const fullInputPayload = { ...payload }
-  if (forceFull && Array.isArray(input) && explicitPrevious !== undefined) {
-    delete fullInputPayload.previous_response_id
-  }
+  const stripStalePrevious =
+    forceFull && Array.isArray(input) && explicitPrevious !== undefined
+  const fullInputPayload = stripStalePrevious ? { ...payload } : payload
+  if (stripStalePrevious) delete fullInputPayload.previous_response_id
   const outgoing =
     start >= 0 && previous && Array.isArray(input) ?
       {
