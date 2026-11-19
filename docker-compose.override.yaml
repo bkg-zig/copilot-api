@@ -34,7 +34,10 @@ services:
       COPILOT_API_PUBLIC_URL: https://api.gitspit.com
       COPILOT_API_ALLOWED_ORIGINS: https://api.gitspit.com
       COPILOT_API_SMTP_HOST: host.docker.internal
-      COPILOT_API_SMTP_PORT: "2587"
+      # bkg-core-mail publishes the SMTP submission port on 0.0.0.0:587. The
+      # old 2587 was bound to 127.0.0.1 only, so the container could never
+      # reach it (ECONNREFUSED) and reset/setup mails were silently dropped.
+      COPILOT_API_SMTP_PORT: "587"
       COPILOT_API_SMTP_TLS_SERVERNAME: mail.gitspit.com
       COPILOT_API_SMTP_USER: agents@gitspit.com
       COPILOT_API_SMTP_FROM: "Copilot API <agents@gitspit.com>"
