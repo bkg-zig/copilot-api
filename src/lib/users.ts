@@ -174,8 +174,10 @@ export class UserStore {
   async listUsers(): Promise<Array<PublicUser>> {
     const db = await this.getDb()
     const rows = db
-      .prepare("SELECT * FROM dashboard_users ORDER BY created_at, email")
-      .all() as Array<UserRow>
+      .prepare<UserRow>(
+        "SELECT * FROM dashboard_users ORDER BY created_at, email",
+      )
+      .all()
     return rows.map((row) => toPublicUser(row))
   }
 

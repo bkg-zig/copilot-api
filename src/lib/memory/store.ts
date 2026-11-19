@@ -342,11 +342,11 @@ function queryEntries(
   const limit =
     input.limit && input.limit > 0 ? Math.min(input.limit, 1000) : 500
   const rows = db
-    .prepare(
+    .prepare<MemoryEntryRow>(
       `SELECT * FROM memory_entries WHERE ${clauses.join(" AND ")}
         ORDER BY pinned DESC, strength DESC, last_seen_at_ms DESC LIMIT ?`,
     )
-    .all(...values, limit) as Array<MemoryEntryRow>
+    .all(...values, limit)
   return rows.map(toEntry)
 }
 
@@ -386,8 +386,10 @@ export class MemoryStore {
   async listProjects(): Promise<Array<MemoryProject>> {
     const db = await this.db()
     const rows = db
-      .prepare("SELECT * FROM memory_projects ORDER BY updated_at_ms DESC")
-      .all() as Array<MemoryProjectRow>
+      .prepare<MemoryProjectRow>(
+        "SELECT * FROM memory_projects ORDER BY updated_at_ms DESC",
+      )
+      .all()
     return rows.map(toProject)
   }
 
