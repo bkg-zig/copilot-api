@@ -1,3 +1,5 @@
+> **Superseded:** Goal-Anchored Memory (`/v1/memory/*`) is removed. Use the [State Owner](state-owner.md) (Postgres/pgvector: working state, event log, blueprints, bootstrap).
+
 # Goal-Anchored Memory
 
 [Home](../../../README.md) · [Documentation](README.md)

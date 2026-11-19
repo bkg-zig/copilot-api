@@ -24,7 +24,9 @@ import { webAdminRoutes } from "./routes/admin/web/route"
 import { embeddingRoutes } from "./routes/embeddings/route"
 import { healthRoutes } from "./routes/health/route"
 import { imageRoutes } from "./routes/images/route"
-import { memoryAdminRoutes, memoryRoutes } from "./routes/memory/route"
+import { createStateRoutes, createStateAdminRoutes } from "./routes/state/route"
+import { createStateInjectionMiddleware } from "./lib/state/injection"
+import { getStateRepository } from "./lib/state/index"
 import { messageRoutes } from "./routes/messages/route"
 import { modelRoutes } from "./routes/models/route"
 import { providerAlphaSearchRoutes } from "./routes/provider/alpha-search/route"
@@ -148,6 +150,10 @@ export function createServer(options: CreateServerOptions = {}): Hono {
     "*",
     requestEventsMiddleware(options.plugins, options.port ?? 4141),
   )
+  server.use(
+    "*",
+    createStateInjectionMiddleware(() => getStateRepository() ?? ({} as never)),
+  )
 
   server.get("/", (c) => {
     const usageViewerFileUrl = new URL("../pages/index.html", import.meta.url)
@@ -188,8 +194,8 @@ export function createServer(options: CreateServerOptions = {}): Hono {
   server.route("/alpha/search", alphaSearchRoutes)
   server.route("/images", imageRoutes)
   server.route("/videos", videoRoutes)
-  server.route("/memory", memoryRoutes)
-  server.route("/admin/memory", memoryAdminRoutes)
+  server.route("/", createStateRoutes())
+  server.route("/admin/state", createStateAdminRoutes())
 
   // Compatibility with tools that expect v1/ prefix
   server.route("/v1/chat/completions", completionRoutes)
@@ -199,7 +205,6 @@ export function createServer(options: CreateServerOptions = {}): Hono {
   server.route("/v1/alpha/search", alphaSearchRoutes)
   server.route("/v1/images", imageRoutes)
   server.route("/v1/videos", videoRoutes)
-  server.route("/v1/memory", memoryRoutes)
 
   // Anthropic compatible endpoints
   server.route("/v1/messages", messageRoutes)

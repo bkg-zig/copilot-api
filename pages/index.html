@@ -1690,6 +1690,14 @@
             busy: {},
             testResults: {},
           },
+          statelog: {
+            repo: "",
+            state: null,
+            events: [],
+            blueprints: [],
+            loading: false,
+            error: null,
+          },
           tokenUsagePeriod: DEFAULT_TOKEN_USAGE_PERIOD,
           tokenUsageTrendDay: null,
           tokenUsageTrendMetric: ALL_METRICS_VALUE,
@@ -2287,6 +2295,13 @@
             return;
           }
 
+          if (state.activeTab === "log") {
+            contentArea.innerHTML = renderStateLogSection();
+            createIcons();
+            wireStateLogSection();
+            return;
+          }
+
           if (state.isLoading) {
             contentArea.innerHTML = renderSpinner();
             createIcons();
@@ -2427,6 +2442,117 @@
           return state.modelsSearch.trim()
             ? `${getFilteredModels().length} of ${total} models`
             : `${total} models`;
+        }
+
+        function stateLogApi(path, options = {}) {
+          const endpoint = (endpointUrlInput.value || "").trim().replace(/\/$/, "");
+          const apiKey = (apiKeyInput.value || "").trim();
+          const headers = { ...(options.headers || {}) };
+          if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
+          return fetch(`${endpoint}${path}`, { ...options, headers });
+        }
+
+        function renderStateLogSection() {
+          const s = state.statelog;
+          return `
+            <section class="panel" aria-label="State log">
+              <div class="panel-header">
+                <div>
+                  <h2 class="panel-title">State &amp; Event Log</h2>
+                  <p class="panel-meta">Working State pro Repo, Events anhängen, Blueprints suchen — der State Owner (Postgres/pgvector).</p>
+                </div>
+              </div>
+              <div class="px-4 pb-4" style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:end">
+                <label style="display:flex;flex-direction:column;gap:.25rem">Repo-ID (proj_hash)
+                  <input type="text" id="statelog-repo" class="input-control input-focus" placeholder="proj_…" value="${escapeHtml(s.repo)}" style="min-width:20rem" />
+                </label>
+                <button type="button" class="btn" data-statelog="state">State laden</button>
+                <button type="button" class="btn" data-statelog="events">Events laden</button>
+                <button type="button" class="btn" data-statelog="blueprints">Blueprints laden</button>
+                <button type="button" class="btn" data-statelog="bootstrap">Bootstrap</button>
+              </div>
+              <form id="statelog-event-form" class="px-4 pb-4" style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:end">
+                <label style="display:flex;flex-direction:column;gap:.25rem">Art
+                  <select id="statelog-kind" class="input-control"><option value="step">step</option><option value="tool">tool</option><option value="error">error</option><option value="decision">decision</option><option value="summary">summary</option><option value="subagent">subagent</option><option value="goal">goal</option><option value="blueprint">blueprint</option></select>
+                </label>
+                <label style="display:flex;flex-direction:column;gap:.25rem;flex:1">Zusammenfassung
+                  <input type="text" id="statelog-summary" class="input-control input-focus" placeholder="Was wurde entschieden / getan?" />
+                </label>
+                <label style="display:flex;flex-direction:column;gap:.25rem"><span>&nbsp;</span>
+                  <label style="font-weight:400"><input type="checkbox" id="statelog-resolved" /> gelöst</label>
+                </label>
+                <button type="submit" class="btn">Event anhängen</button>
+              </form>
+              <div id="statelog-feedback" class="px-4 text-xs" role="status" aria-live="polite">${s.loading ? "Lädt…" : s.error ? escapeHtml(s.error) : ""}</div>
+              <div class="px-4 pb-4" style="display:grid;gap:1rem">
+                <div><h3 class="panel-meta">State</h3><pre class="models-json-cell">${escapeHtml(s.state ? JSON.stringify(s.state, null, 2) : "(—)")}</pre></div>
+                <div><h3 class="panel-meta">Events (${s.events.length})</h3><pre class="models-json-cell">${escapeHtml(s.events.length ? JSON.stringify(s.events.slice(0, 20), null, 2) : "(—)")}</pre></div>
+                <div><h3 class="panel-meta">Blueprints (${s.blueprints.length})</h3><pre class="models-json-cell">${escapeHtml(s.blueprints.length ? JSON.stringify(s.blueprints.slice(0, 10), null, 2) : "(—)")}</pre></div>
+              </div>
+            </section>
+          `;
+        }
+
+        function wireStateLogSection() {
+          const repoInput = document.getElementById("statelog-repo");
+          document.querySelectorAll("[data-statelog]").forEach((button) => {
+            button.addEventListener("click", async () => {
+              const repo = (repoInput?.value || "").trim();
+              if (!repo && button.dataset.statelog !== "blueprints") { state.statelog.error = "Repo-ID fehlt."; render("log"); return; }
+              state.statelog.loading = true; state.statelog.error = null; render("log");
+              try {
+                if (button.dataset.statelog === "state") {
+                  const res = await stateLogApi(`/v1/state/${encodeURIComponent(repo)}`);
+                  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                  const body = await res.json(); state.statelog.repo = repo; state.statelog.state = body.state ?? null;
+                } else if (button.dataset.statelog === "events") {
+                  const res = await stateLogApi(`/v1/events/${encodeURIComponent(repo)}`);
+                  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                  const body = await res.json(); state.statelog.repo = repo; state.statelog.events = body.events ?? [];
+                } else if (button.dataset.statelog === "blueprints") {
+                  const res = await stateLogApi(`/v1/blueprints?limit=20`);
+                  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                  const body = await res.json(); state.statelog.blueprints = body.blueprints ?? [];
+                } else if (button.dataset.statelog === "bootstrap") {
+                  const res = await stateLogApi(`/v1/bootstrap/${encodeURIComponent(repo)}`);
+                  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                  const body = await res.json();
+                  state.statelog.repo = repo; state.statelog.state = body.bootstrap?.state ?? null;
+                  state.statelog.blueprints = body.bootstrap?.blueprints ?? [];
+                }
+              } catch (error) {
+                state.statelog.error = error instanceof Error ? error.message : "Unknown error.";
+              } finally {
+                state.statelog.loading = false; render("log");
+              }
+            });
+          });
+          const form = document.getElementById("statelog-event-form");
+          form?.addEventListener("submit", async (event) => {
+            event.preventDefault();
+            const repo = (repoInput?.value || "").trim();
+            const kind = document.getElementById("statelog-kind")?.value || "step";
+            const summary = (document.getElementById("statelog-summary")?.value || "").trim();
+            if (!repo || !summary) { state.statelog.error = "Repo-ID und Zusammenfassung sind Pflicht."; render("log"); return; }
+            state.statelog.loading = true; state.statelog.error = null; render("log");
+            try {
+              const resolved = document.getElementById("statelog-resolved")?.checked === true;
+              const res = await stateLogApi("/v1/events", {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({ repo_id: repo, kind, summary, resolved }),
+              });
+              if (!res.ok) throw new Error(`HTTP ${res.status}`);
+              const body = await res.json();
+              state.statelog.repo = repo;
+              if (body.event) state.statelog.events = [body.event, ...state.statelog.events].slice(0, 50);
+              if (body.blueprint) state.statelog.blueprints = [body.blueprint, ...state.statelog.blueprints].slice(0, 20);
+            } catch (error) {
+              state.statelog.error = error instanceof Error ? error.message : "Unknown error.";
+            } finally {
+              state.statelog.loading = false; render("log");
+            }
+          });
         }
 
         function renderModelsSection() {

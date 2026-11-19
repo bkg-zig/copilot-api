@@ -15,7 +15,7 @@ Start with the [quick start](../../../README.md#quick-start), then choose the gu
 | [Desktop App](desktop.md) | Installation, accounts, and advanced settings |
 | [Plugins and Tool Search](integrations.md) | Claude Code / OpenCode plugins and the MCP tool search bridge |
 | [Gateway event plugins](gateway-plugins.md) | Observe request state, timing, and usage with server-side plugins |
-| [Goal-Anchored Memory](memory.md) | Per-project agent memory in the gateway: a pinned goal, strength-ranked steps, and the HTTP API |
+| [State Owner](state-owner.md) | Working State, event log, cross-repo blueprints, bootstrap: gateway-native Postgres/pgvector storage and HTTP API (supersedes Goal-Anchored Memory) |
 | [Usage Monitoring](usage.md) | Usage dashboard, token history, and quota monitoring |
 | [CLI Reference](cli.md) | Commands, options, and request examples |
 | [Configuration Reference](configuration.md) | config.json options, model routing, and transport settings |

@@ -1,3 +1,5 @@
+> **Abgelöst:** Goal-Anchored Memory (`/v1/memory/*`) ist entfernt. Nachfolger ist der [State Owner](state-owner.md) (Postgres/pgvector: Working State, Event-Log, Blueprints, Bootstrap).
+
 # Anleitung: Ziel-verankertes Gedächtnis (Goal-Anchored Memory)
 
 [Startseite](../../../README.md) · [English](../en/memory.md)

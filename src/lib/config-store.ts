@@ -199,6 +199,7 @@ export interface AppConfig {
   // alias (default "auto"), the gateway reads the prompt and picks a model
   // from `pool` using rules and/or a built-in heuristic.
   router?: RouterConfig
+  state?: Partial<import("./state/config").StateConfig>
 }
 
 export interface RouterRule {

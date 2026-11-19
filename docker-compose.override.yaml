@@ -48,6 +48,17 @@ services:
         target: /run/secrets/smtp_password
         read_only: true
 
+  # Shared supafleet database (optional): join the external bkg-db network so
+  # state/blueprints can be shared with bkg-core-gateway. Only meaningful while
+  # the supafleet project runs; override SUPABASE_DB_URL to use it:
+  #   SUPABASE_DB_URL=postgresql://postgres:<pw>@bkg-supafleet-db:5432/<db>
+  postgres:
+    networks:
+      - default
+      - bkg-db
+
 networks:
   gitspit_frontend:
+    external: true
+  bkg-db:
     external: true

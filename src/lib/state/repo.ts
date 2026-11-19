@@ -3,6 +3,28 @@ import { createHash } from "node:crypto"
 import { realpathSync } from "node:fs"
 import path from "node:path"
 
+export interface RepoRef {
+  repo_id: string
+  git_remote_url: string
+}
+
+/**
+ * Resolve a client-supplied repo reference to the canonical `proj_<hash>`
+ * id, reusing the memory project's identity derivation.
+ */
+export function resolveRepo(
+  ref: string | undefined,
+  fallbackCwd?: string,
+): RepoRef {
+  const trimmed = (ref ?? "").trim()
+  const project = resolveProjectRef(trimmed || undefined, fallbackCwd)
+  return { repo_id: project.id, git_remote_url: project.remote }
+}
+
+export function isValidRepoId(repoId: string): boolean {
+  return /^proj_[0-9a-f]{24}$/.test(repoId.trim())
+}
+
 export interface DerivedProject {
   id: string
   name: string

@@ -98,6 +98,33 @@ services:
           create_host_path: false
     restart: "no"
 
+  # State owner: Postgres + pgvector. No host port (like bkg-core-gateway);
+  # reachable only inside the compose network via postgres:5432.
+  postgres:
+    image: pgvector/pgvector:pg17
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: postgres
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - type: bind
+        source: ./supabase/migrations
+        target: /docker-entrypoint-initdb.d
+        read_only: true
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
   copilot-api:
     image: copilot-api-local:latest
     pull_policy: never
@@ -105,6 +132,8 @@ services:
     depends_on:
       data-init:
         condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
     restart: unless-stopped
     read_only: true
     cap_drop:
@@ -117,6 +146,7 @@ services:
       - "${COPILOT_API_BIND:-127.0.0.1}:${COPILOT_API_PORT:-4141}:4141"
     environment:
       COPILOT_API_HOME: /data
+      SUPABASE_DB_URL: postgresql://postgres:${POSTGRES_PASSWORD:-postgres}@postgres:5432/postgres
       # Always the path inside the container: the host data directory
       # (/srv/bkg/data/copilot-data) is mounted at /data. A host path must never
       # leak in here, the container filesystem is read-only (EROFS).
@@ -166,3 +196,6 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
+
+volumes:
+  postgres_data:
