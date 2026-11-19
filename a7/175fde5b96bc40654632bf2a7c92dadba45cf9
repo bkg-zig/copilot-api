@@ -1,0 +1,21 @@
+package.json
+  s_de07b3b0e34fbc::t_86488ea63a5b79 68
+bun.lock
+  s_de07b3b0e34fbc::t_b92a38991c2345 19,764-765
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "a7175fde5b96bc40654632bf2a7c92dadba45cf9",
+  "prompts": {},
+  "sessions": {
+    "s_de07b3b0e34fbc": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_e1e6218fcffesVtPOhPc16cIqs",
+        "model": "big-pickle"
+      },
+      "human_author": "bkg <bkg@skill.eysho.info>"
+    }
+  }
+}
