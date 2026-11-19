@@ -1,0 +1,23 @@
+src/lib/users.ts
+  s_de07b3b0e34fbc::t_35e81fde8714b3 180
+  s_de07b3b0e34fbc::t_8d6310cf7e5566 177-179
+src/lib/memory/store.ts
+  s_de07b3b0e34fbc::t_14ac0a0afbc75b 389-392
+  s_de07b3b0e34fbc::t_64276a63138a9b 345,349
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "b091435913f5c89d06fcb5e130d38069f96ad4ab",
+  "prompts": {},
+  "sessions": {
+    "s_de07b3b0e34fbc": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_e1e6218fcffesVtPOhPc16cIqs",
+        "model": "big-pickle"
+      },
+      "human_author": "bkg <bkg@skill.eysho.info>"
+    }
+  }
+}
