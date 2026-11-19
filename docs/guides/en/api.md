@@ -43,6 +43,8 @@ The web dashboard (`/`, `/usage-viewer`) signs in with a username and password i
 | `/auth/login` / `/auth/logout` | `POST` | public | Starts or ends a session |
 | `/auth/me` | `GET` | session | Current user |
 | `/auth/password` | `POST` | session | Changes your own password (`currentPassword`, `newPassword`) |
+| `/auth/password/forgot` | `POST` | public | Emails a reset link when SMTP is configured. Always returns `{ ok: true }`. |
+| `/auth/password/reset-via-admin` | `POST` | admin key | Sets a new password for an existing account using `auth.adminApiKey`. See [admin API keys](admin-api-keys.md#password-reset-with-the-admin-key). |
 | `/auth/users` | `GET`, `POST` | admin session | Lists users or creates one (`username`, `password`, `role`) |
 | `/auth/users/:username` | `PATCH`, `DELETE` | admin session | Changes `role`/`password` or deletes a user |
 
@@ -182,6 +184,11 @@ These endpoints are reserved for local administrative actions and only accept `a
 | ------------------------------------- | ------ | --------------------------------------------------------------------------- |
 | `GET /admin/config/model-mappings`    | `GET`  | Returns the current `config.json` path and the active `modelMappings` map.  |
 | `POST /admin/config/model-mappings`   | `POST` | Updates only the `modelMappings` field in `config.json` and returns it back. |
+| `GET /admin/api-keys`                 | `GET`  | Lists gateway client keys with masked secrets and lifetime usage. |
+| `POST /admin/api-keys`                | `POST` | Creates a client key, optionally bound to `allowedModels` and a `quota`. Returns the full secret once. |
+| `PATCH /admin/api-keys/:id`           | `PATCH` | Updates a client key; `regenerateKey: true` issues a new secret. |
+| `DELETE /admin/api-keys/:id`          | `DELETE` | Deletes a client key. |
+| `GET /admin/api-keys/usage`           | `GET`  | Returns per-key quota usage for the Admin tab. |
 | `POST /admin/config/reload` | `POST` | Reloads configuration into the current server process without restarting. |
 
 The reload endpoint requires no request body and returns `{ configPath, reloaded: true }`. After changing the admin key on disk, authenticate the reload with the previous active key. Invalid JSON preserves the last working configuration. The desktop calls this endpoint automatically after saving gateway configuration.

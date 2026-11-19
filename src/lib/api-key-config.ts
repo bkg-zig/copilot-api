@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto"
+import { createHash, randomBytes, randomUUID } from "node:crypto"
 
 import type { GatewayApiKeyConfig } from "./types/api-key"
 export type { GatewayApiKeyConfig, ApiKeyQuotaPeriod } from "./types/api-key"
@@ -11,6 +11,23 @@ export function legacyApiKeyId(key: string): string {
       .digest("hex")
       .slice(0, 32)
   )
+}
+
+/** A fresh client key for the gateway. The prefix makes keys recognisable. */
+export function generateGatewayApiKey(): string {
+  return "cpa_" + randomBytes(24).toString("base64url")
+}
+
+/** A stable, URL-safe identifier for a key record (independent of the secret). */
+export function generateGatewayApiKeyId(): string {
+  return "key_" + randomUUID().replace(/-/g, "")
+}
+
+/** Shows enough of a key to recognise it without exposing the secret. */
+export function maskApiKey(key: string): string {
+  const value = key.trim()
+  if (value.length <= 10) return `${value.slice(0, 2)}…`
+  return `${value.slice(0, 6)}…${value.slice(-4)}`
 }
 
 function record(value: unknown): Record<string, unknown> {

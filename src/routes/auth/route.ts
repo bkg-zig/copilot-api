@@ -400,6 +400,52 @@ authRoutes.post("/password", async (c) => {
   }
 })
 
+// Password reset without a session, authorised by the configured admin API
+// key. Intended for headless/ops use (curl, scripts) when email reset is not
+// available or the only admin is locked out.
+authRoutes.post("/password/reset-via-admin", async (c) => {
+  const adminKeys = getConfiguredAdminApiKeys()
+  if (adminKeys.length === 0) {
+    return errorResponse(
+      c,
+      "No admin API key is configured. Sign in as an admin instead.",
+      403,
+      "permission_error",
+    )
+  }
+  const body = await readJson(c)
+  const providedKey =
+    typeof body.adminKey === "string" && body.adminKey.trim() ?
+      body.adminKey.trim()
+    : extractRequestApiKey(c)
+  if (!providedKey || !adminKeys.includes(providedKey)) {
+    return errorResponse(c, "Invalid admin key.", 401, "authentication_error")
+  }
+  const store = getUserStore()
+  const clientKey = `admin-reset:${getClientKey(c)}`
+  if (await store.isLoginBlocked(clientKey, 10)) {
+    return errorResponse(
+      c,
+      "Too many requests. Try again later.",
+      429,
+      "rate_limit_error",
+    )
+  }
+  try {
+    const email = normalizeEmail(body.email)
+    if (!(await store.getUser(email))) {
+      await store.recordLoginFailure(clientKey)
+      return errorResponse(c, `User '${email}' not found.`, 404)
+    }
+    const user = await store.setPassword(email, body.password)
+    await store.resetLoginFailures(clientKey)
+    consola.info(`Password of '${user.email}' reset via admin key.`)
+    return c.json({ user: { email: user.email, role: user.role } })
+  } catch (error) {
+    return handleStoreError(c, error)
+  }
+})
+
 // --- Admin-only user management ---
 
 const requireAdminSession: MiddlewareHandler = async (c, next) => {

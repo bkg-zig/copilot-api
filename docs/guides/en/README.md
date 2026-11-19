@@ -19,4 +19,5 @@ Start with the [quick start](../../../README.md#quick-start), then choose the gu
 | [CLI Reference](cli.md) | Commands, options, and request examples |
 | [Configuration Reference](configuration.md) | config.json options, model routing, and transport settings |
 | [API and Authentication](api.md) | Endpoints, API keys, and admin authentication |
+| [Admin API Keys and Password Reset](admin-api-keys.md) | Create model-restricted client keys, manage quotas, and reset passwords with the admin key |
 | [Troubleshooting](troubleshooting.md) | Fixes for Claude models missing from the Copilot model list |

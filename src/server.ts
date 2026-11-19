@@ -1,4 +1,5 @@
 import { apiKeyPolicyMiddleware } from "./lib/api-key-policy"
+import { apiKeyManagementRoutes } from "./routes/admin/api-keys/manage-route"
 import { apiKeyUsageRoutes } from "./routes/admin/api-keys/route"
 import { Hono, type Context } from "hono"
 import { cors } from "hono/cors"
@@ -156,6 +157,7 @@ export function createServer(options: CreateServerOptions = {}): Hono {
   server.route("/token-usage", tokenUsageRoute)
   server.route("/admin/token-usage", tokenUsageRoute)
   server.route("/admin/api-keys/usage", apiKeyUsageRoutes)
+  server.route("/admin/api-keys", apiKeyManagementRoutes)
   server.route("/responses", responsesRoutes)
   server.route("/alpha/search", alphaSearchRoutes)
   server.route("/images", imageRoutes)

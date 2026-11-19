@@ -1351,6 +1351,7 @@
           </div>
           <button id="auth-submit" type="submit" class="admin-btn">Sign in</button>
           <button id="auth-forgot" type="button" class="auth-link" hidden>Forgot password?</button>
+          <button id="auth-adminreset" type="button" class="auth-link" hidden>Reset with admin key</button>
         </div>
       </form>
     </div>
@@ -1704,6 +1705,10 @@
               excludeModels: "",
             },
             keysDraft: null,
+            apiKeys: [],
+            apiKeysError: null,
+            keyDraft: null,
+            createdKey: null,
           },
         };
 
@@ -5057,6 +5062,38 @@
           return response.json();
         }
 
+        /**
+         * Calls the admin API-key management endpoints (`/admin/api-keys`),
+         * which are guarded by the admin key / admin session middleware.
+         */
+        async function adminApiKeysFetch(path = "", options = {}) {
+          const endpoint = endpointUrlInput.value.trim();
+          if (!endpoint) throw new Error("Endpoint URL cannot be empty.");
+          const response = await fetch(
+            deriveEndpointUrl(endpoint, `admin/api-keys${path}`),
+            {
+              method: options.method || "GET",
+              headers: adminHeaders(),
+              body:
+                options.body === undefined ? undefined : JSON.stringify(options.body),
+            }
+          );
+          if (!response.ok) {
+            let message = response.statusText || "Request failed";
+            try {
+              const payload = await response.json();
+              const apiMessage = payload?.error?.message || payload?.message;
+              if (typeof apiMessage === "string" && apiMessage.trim()) {
+                message = apiMessage.trim();
+              }
+            } catch (error) {
+              console.warn("Could not parse admin error:", getErrorMessage(error));
+            }
+            throw new Error(message);
+          }
+          return response.json();
+        }
+
         async function webApiFetch(path, options = {}) {
           const endpoint = endpointUrlInput.value.trim();
           if (!endpoint) throw new Error("Endpoint URL cannot be empty.");
@@ -5230,6 +5267,7 @@
           state.admin.loading = true;
           state.admin.error = null;
           state.admin.notice = null;
+          state.admin.apiKeysError = null;
           render("admin");
           try {
             let models = [];
@@ -5242,13 +5280,17 @@
               models = [];
             }
 
-            const [providersPayload, keysPayload, routerPayload, mappingsPayload, codexAccountsPayload] =
+            const [providersPayload, keysPayload, routerPayload, mappingsPayload, codexAccountsPayload, apiKeysPayload] =
               await Promise.all([
                 adminFetch("providers"),
                 adminFetch("keys"),
                 adminFetch("router"),
                 adminFetch("model-mappings"),
                 adminFetch("codex/accounts").catch(() => ({ accounts: [] })),
+                adminApiKeysFetch("").catch((error) => {
+                  state.admin.apiKeysError = getErrorMessage(error);
+                  return { keys: [] };
+                }),
               ]);
 
             state.admin.models = models;
@@ -5263,6 +5305,9 @@
               apiKeysText: (keysPayload.apiKeys || []).join("\n"),
               adminApiKey: keysPayload.adminApiKey || "",
             };
+            state.admin.apiKeys = Array.isArray(apiKeysPayload.keys)
+              ? apiKeysPayload.keys
+              : [];
             state.admin.router = normalizeRouterDraft(routerPayload.router);
             state.admin.mappings = mappingsPayload.modelMappings || {};
             state.admin.mappingsDraft = Object.entries(state.admin.mappings).map(
@@ -5562,6 +5607,7 @@
                 <p class="admin-hint">Client keys for normal routes and the admin key for this panel.</p>
                 ${keysPanel}
               </div>
+              ${renderApiKeysCard()}
               <div class="admin-card">
                 <h2>Best-model router</h2>
                 <p class="admin-hint">When a client requests the alias, the gateway reads the prompt and picks the best model from the pool. The alias is listed as a selectable model in Claude and OpenCode.</p>
@@ -5621,6 +5667,217 @@
               </div>
               <div class="admin-actions"><button type="button" class="admin-btn" id="user-create">${mailReady ? "Invite user" : "Add user"}</button></div>
             </div>`;
+        }
+
+        function formatCostAmount(value) {
+          if (value === null || value === undefined) return "—";
+          const n = Number(value);
+          return Number.isFinite(n) ? n.toFixed(4) : "—";
+        }
+
+        function normalizeKeyDraft(input) {
+          const draft = input && typeof input === "object" ? input : {};
+          return {
+            id: typeof draft.id === "string" ? draft.id : "",
+            name: typeof draft.name === "string" ? draft.name : "",
+            allowedModels: Array.isArray(draft.allowedModels)
+              ? draft.allowedModels.filter((model) => typeof model === "string")
+              : [],
+            quotaPeriod: ["day", "month", "lifetime"].includes(draft.quotaPeriod)
+              ? draft.quotaPeriod
+              : "",
+            quotaAmount:
+              draft.quotaAmount === null || draft.quotaAmount === undefined
+                ? ""
+                : String(draft.quotaAmount),
+            expiresAt:
+              typeof draft.expiresAt === "string" ? draft.expiresAt.slice(0, 16) : "",
+          };
+        }
+
+        function renderApiKeysCard() {
+          const keys = state.admin.apiKeys || [];
+          const draft = normalizeKeyDraft(state.admin.keyDraft);
+          const rows = keys
+            .map((key) => {
+              const models =
+                key.allowedModels && key.allowedModels.length
+                  ? key.allowedModels.join(", ")
+                  : "all models";
+              const quota = key.quota ? `${key.quota.amount} / ${key.quota.period}` : "—";
+              const usage = key.usage || {};
+              const remaining =
+                usage.remainingAmount === null || usage.remainingAmount === undefined
+                  ? "—"
+                  : formatCostAmount(usage.remainingAmount);
+              return `
+              <tr>
+                <td>${escapeHtml(key.name || "—")}</td>
+                <td><code title="${escapeHtml(key.id)}">${escapeHtml(key.maskedKey || key.key)}</code></td>
+                <td>${key.enabled ? "yes" : "no"}</td>
+                <td>${escapeHtml(models)}</td>
+                <td>${escapeHtml(quota)}</td>
+                <td>${formatCostAmount(usage.usedAmount)}</td>
+                <td>${remaining}</td>
+                <td>${Number(usage.totalTokens ?? 0).toLocaleString()}</td>
+                <td>${Number(usage.requestCount ?? 0).toLocaleString()}</td>
+                <td>
+                  <button type="button" class="admin-btn secondary" data-apikey-copy="${escapeHtml(key.key)}">Copy</button>
+                  <button type="button" class="admin-btn secondary" data-apikey-edit="${escapeHtml(key.id)}">Edit</button>
+                  <button type="button" class="admin-btn danger" data-apikey-delete="${escapeHtml(key.id)}">Delete</button>
+                </td>
+              </tr>`;
+            })
+            .join("");
+
+          const modelOptions = state.admin.models
+            .map(
+              (model) =>
+                `<option value="${escapeHtml(model)}"${draft.allowedModels.includes(model) ? " selected" : ""}>${escapeHtml(model)}</option>`
+            )
+            .join("");
+
+          const created = state.admin.createdKey
+            ? `<div class="admin-note ok">New key created — copy it now, it is shown in full only here:<br><code>${escapeHtml(state.admin.createdKey)}</code></div>`
+            : "";
+
+          return `
+            <div class="admin-card">
+              <h2>Gateway API keys</h2>
+              <p class="admin-hint">Client keys for the normal API routes. Restrict each key to specific models and/or a usage quota. Token counts are lifetime totals.</p>
+              ${state.admin.apiKeysError ? `<div class="admin-note error">${escapeHtml(state.admin.apiKeysError)}</div>` : ""}
+              ${created}
+              <table class="admin-table">
+                <thead><tr><th>Name</th><th>Key</th><th>Enabled</th><th>Models</th><th>Quota</th><th>Used</th><th>Remaining</th><th>Tokens</th><th>Requests</th><th></th></tr></thead>
+                <tbody>${rows || '<tr><td colspan="10">No API keys configured.</td></tr>'}</tbody>
+              </table>
+              <div class="admin-grid" style="margin-top:14px">
+                <div class="admin-field"><label>Name</label><input id="apikey-name" type="text" value="${escapeHtml(draft.name)}" placeholder="e.g. team-alice" /></div>
+                <div class="admin-field"><label>Quota period</label><select id="apikey-quota-period">
+                  <option value=""${draft.quotaPeriod === "" ? " selected" : ""}>no quota</option>
+                  <option value="day"${draft.quotaPeriod === "day" ? " selected" : ""}>per day</option>
+                  <option value="month"${draft.quotaPeriod === "month" ? " selected" : ""}>per month</option>
+                  <option value="lifetime"${draft.quotaPeriod === "lifetime" ? " selected" : ""}>lifetime</option>
+                </select></div>
+                <div class="admin-field"><label>Quota amount (cost units)</label><input id="apikey-quota-amount" type="number" min="0" step="0.01" value="${escapeHtml(draft.quotaAmount)}" placeholder="e.g. 25" /></div>
+                <div class="admin-field"><label>Expires at (optional)</label><input id="apikey-expires" type="datetime-local" value="${escapeHtml(draft.expiresAt)}" /></div>
+                <div class="admin-field" style="grid-column: 1 / -1;"><label>Allowed models (empty = all)</label><select id="apikey-models" multiple size="6">${modelOptions}</select></div>
+              </div>
+              <div class="admin-actions">
+                <button type="button" class="admin-btn" id="apikey-save">${draft.id ? "Save key" : "Create key"}</button>
+                <button type="button" class="admin-btn secondary" id="apikey-clear">Clear form</button>
+              </div>
+            </div>`;
+        }
+
+        function readKeyDraftFromDom() {
+          const value = (id) => (document.getElementById(id)?.value ?? "").trim();
+          const selected = Array.from(
+            document.getElementById("apikey-models")?.selectedOptions || []
+          ).map((option) => option.value);
+          return {
+            id: state.admin.keyDraft?.id || "",
+            name: value("apikey-name"),
+            allowedModels: selected,
+            quotaPeriod: value("apikey-quota-period"),
+            quotaAmount: value("apikey-quota-amount"),
+            expiresAt: value("apikey-expires"),
+          };
+        }
+
+        async function saveApiKey() {
+          const draft = readKeyDraftFromDom();
+          const body = { name: draft.name || null };
+          body.allowedModels = draft.allowedModels.length ? draft.allowedModels : null;
+          if (draft.quotaPeriod) {
+            const amount = Number(draft.quotaAmount);
+            if (!Number.isFinite(amount) || amount < 0) {
+              state.admin.error = "Quota amount must be a non-negative number.";
+              render("admin");
+              return;
+            }
+            body.quota = { period: draft.quotaPeriod, amount };
+          } else {
+            body.quota = null;
+          }
+          body.expiresAt = draft.expiresAt ? new Date(draft.expiresAt).toISOString() : null;
+          try {
+            if (draft.id) {
+              await adminApiKeysFetch(`/${encodeURIComponent(draft.id)}`, {
+                method: "PATCH",
+                body,
+              });
+              state.admin.createdKey = null;
+            } else {
+              const payload = await adminApiKeysFetch("", { method: "POST", body });
+              state.admin.createdKey = payload?.key?.key || null;
+            }
+            state.admin.keyDraft = null;
+            await fetchAdminData();
+            state.admin.notice = draft.id ? "API key saved." : "API key created.";
+            render("admin");
+          } catch (error) {
+            state.admin.error = getErrorMessage(error);
+            render("admin");
+          }
+        }
+
+        function wireApiKeysCard() {
+          const save = document.getElementById("apikey-save");
+          if (save) save.addEventListener("click", () => void saveApiKey());
+          const clear = document.getElementById("apikey-clear");
+          if (clear) {
+            clear.addEventListener("click", () => {
+              state.admin.keyDraft = null;
+              state.admin.createdKey = null;
+              render("admin");
+            });
+          }
+          contentArea.querySelectorAll("[data-apikey-copy]").forEach((button) => {
+            button.addEventListener("click", async () => {
+              const key = button.getAttribute("data-apikey-copy") || "";
+              try {
+                await navigator.clipboard.writeText(key);
+                state.admin.notice = "API key copied to the clipboard.";
+              } catch (error) {
+                state.admin.error = "Could not copy: " + getErrorMessage(error);
+              }
+              render("admin");
+            });
+          });
+          contentArea.querySelectorAll("[data-apikey-edit]").forEach((button) => {
+            button.addEventListener("click", () => {
+              const id = button.getAttribute("data-apikey-edit");
+              const key = (state.admin.apiKeys || []).find((entry) => entry.id === id);
+              if (!key) return;
+              state.admin.createdKey = null;
+              state.admin.keyDraft = {
+                id: key.id,
+                name: key.name || "",
+                allowedModels: Array.isArray(key.allowedModels) ? key.allowedModels : [],
+                quotaPeriod: key.quota?.period || "",
+                quotaAmount: key.quota?.amount ?? "",
+                expiresAt: key.expiresAt ? key.expiresAt.slice(0, 16) : "",
+              };
+              render("admin");
+              document.getElementById("apikey-name")?.scrollIntoView({
+                behavior: "smooth",
+                block: "center",
+              });
+            });
+          });
+          contentArea.querySelectorAll("[data-apikey-delete]").forEach((button) => {
+            button.addEventListener("click", () => {
+              const id = button.getAttribute("data-apikey-delete");
+              const key = (state.admin.apiKeys || []).find((entry) => entry.id === id);
+              const label = key?.name || key?.maskedKey || id;
+              if (!window.confirm(`Delete API key '${label}'?`)) return;
+              void adminAction(
+                () => adminApiKeysFetch(`/${encodeURIComponent(id)}`, { method: "DELETE" }),
+                `API key '${label}' deleted.`
+              );
+            });
+          });
         }
 
         async function userRequest(path, method, body) {
@@ -5847,6 +6104,7 @@
         function wireAdminSection() {
           const admin = state.admin;
           wireUsersCard();
+          wireApiKeysCard();
 
           const keySave = document.getElementById("admin-key-save");
           if (keySave) {
@@ -6281,16 +6539,20 @@
           authMode = mode;
           const setup = mode === "setup";
           const link = mode === "link";
+          const adminReset = mode === "adminreset";
           const setupByEmail = setup && authStatus.setupByEmail;
           const keySetup = setup && authStatus.setupNeedsAdminKey;
           const titles = {
             login: "Sign in",
             setup: "Set up the first admin",
+            adminreset: "Reset password with admin key",
             link: linkInfo?.purpose === "reset" ? "Choose a new password" : "Choose your password",
           };
           document.getElementById("auth-title").textContent = titles[mode];
           document.getElementById("auth-description").textContent = link
             ? `For ${linkInfo?.email || "your account"}. At least 10 characters.`
+            : adminReset
+              ? "Enter the account email, a new password, and the admin API key from config.json (auth.adminApiKey)."
             : setup
               ? setupByEmail
                 ? "No account exists yet. A setup link goes to the admin email address."
@@ -6303,15 +6565,16 @@
           document.getElementById("auth-fields").hidden = setup && !keySetup;
           authEmail.readOnly = link;
           if (link) authEmail.value = linkInfo?.email || "";
-          authPassword.autocomplete = setup || link ? "new-password" : "current-password";
-          document.getElementById("auth-password2-field").hidden = !link;
-          authPassword2.required = link;
-          authAdminKeyField.hidden = !keySetup;
+          authPassword.autocomplete = setup || link || adminReset ? "new-password" : "current-password";
+          document.getElementById("auth-password2-field").hidden = !(link || adminReset);
+          authPassword2.required = link || adminReset;
+          authAdminKeyField.hidden = !(keySetup || adminReset);
           document.getElementById("auth-forgot").hidden = !(mode === "login" && authStatus.passwordResetAvailable);
-          document.getElementById("auth-submit").textContent = link ? "Save password and sign in" : setup ? "Create admin" : "Sign in";
+          document.getElementById("auth-adminreset").hidden = !(mode === "login" && authStatus.setupNeedsAdminKey);
+          document.getElementById("auth-submit").textContent = adminReset ? "Reset password" : link ? "Save password and sign in" : setup ? "Create admin" : "Sign in";
           setAuthMessage(message, null);
           authGate.hidden = false;
-          (link ? authPassword : setupByEmail && !keySetup ? document.getElementById("auth-setup-mail-button") : authEmail).focus();
+          (adminReset ? authEmail : link ? authPassword : setupByEmail && !keySetup ? document.getElementById("auth-setup-mail-button") : authEmail).focus();
         }
 
         function applySession(user) {
@@ -6401,6 +6664,13 @@
           }
         });
 
+        document.getElementById("auth-adminreset").addEventListener("click", () => {
+          authPassword.value = "";
+          authPassword2.value = "";
+          document.getElementById("auth-admin-key").value = "";
+          showAuthGate("adminreset");
+        });
+
         authForm.addEventListener("submit", async (event) => {
           event.preventDefault();
           const submit = document.getElementById("auth-submit");
@@ -6414,6 +6684,17 @@
             }
             path = "link/complete";
             body = { token: authLinkToken, password: authPassword.value };
+          } else if (authMode === "adminreset") {
+            if (authPassword.value !== authPassword2.value) {
+              setAuthMessage("The passwords do not match.", null);
+              return;
+            }
+            path = "password/reset-via-admin";
+            body = {
+              email: authEmail.value.trim(),
+              password: authPassword.value,
+              adminKey: document.getElementById("auth-admin-key").value.trim(),
+            };
           } else {
             path = authMode === "setup" ? "setup" : "login";
             body = { email: authEmail.value.trim(), password: authPassword.value };
@@ -6427,6 +6708,10 @@
             document.getElementById("auth-admin-key").value = "";
             authLinkToken = null;
             authEmail.readOnly = false;
+            if (authMode === "adminreset") {
+              showAuthGate("login", "Password changed. Sign in with the new password.");
+              return;
+            }
             applySession(payload.user);
             afterLogin();
           } catch (error) {
