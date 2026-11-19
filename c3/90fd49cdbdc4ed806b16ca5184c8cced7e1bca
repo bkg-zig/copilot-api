@@ -1,0 +1,19 @@
+docs/guides/de/admin-api-keys.md
+  s_de07b3b0e34fbc::t_f7191b9d947386 1-176
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "c390fd49cdbdc4ed806b16ca5184c8cced7e1bca",
+  "prompts": {},
+  "sessions": {
+    "s_de07b3b0e34fbc": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_e1e6218fcffesVtPOhPc16cIqs",
+        "model": "big-pickle"
+      },
+      "human_author": "bkg <bkg@skill.eysho.info>"
+    }
+  }
+}
