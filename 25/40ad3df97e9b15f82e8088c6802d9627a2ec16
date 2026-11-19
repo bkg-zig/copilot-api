@@ -1,0 +1,29 @@
+src/routes/token-usage/route.ts
+  s_de07b3b0e34fbc::t_a18930c74bf6a6 1,76-77
+tests/api-key-policy.test.ts
+  s_de07b3b0e34fbc::t_a18930c74bf6a6 106,109-114,169-173
+src/lib/request-auth.ts
+  s_de07b3b0e34fbc::t_a18930c74bf6a6 103-107,146-148,156-160,168-170,176-191
+tests/request-auth.test.ts
+  s_de07b3b0e34fbc::t_a18930c74bf6a6 4,60-62,66-68,80-112
+tests/api-key-management.test.ts
+  s_de07b3b0e34fbc::t_a18930c74bf6a6 6,44-45,49,60
+src/lib/api-key-policy.ts
+  s_de07b3b0e34fbc::t_a18930c74bf6a6 12,58-63,67-79,84-90,92,112,118-119,122-155
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "2540ad3df97e9b15f82e8088c6802d9627a2ec16",
+  "prompts": {},
+  "sessions": {
+    "s_de07b3b0e34fbc": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_e1e6218fcffesVtPOhPc16cIqs",
+        "model": "big-pickle"
+      },
+      "human_author": "bkg <bkg@skill.eysho.info>"
+    }
+  }
+}
