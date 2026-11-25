@@ -485,7 +485,14 @@ body::after {
 }
 .provider-connect-form input,
 .provider-auth-details input {
+  width: 100%;
+  min-width: 0;
   min-height: 38px;
+  padding: 0 12px;
+}
+/* Die eingebetteten SVG-Logos nutzen currentColor und wären als <img> schwarz. */
+.quota-provider-logo img {
+  filter: invert(1);
 }
 .provider-auth-error {
   margin: 0 14px 12px;

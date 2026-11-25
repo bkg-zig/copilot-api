@@ -363,13 +363,9 @@ textarea { resize: vertical; min-height: 80px; }
 }
 
 /* ─── Scrollbar ──────────────────────────────────────────────────────────── */
-::-webkit-scrollbar       { width: 6px; height: 6px; }
-::-webkit-scrollbar-track { background: var(--cyber-bg-deep); }
-::-webkit-scrollbar-thumb {
-  background: var(--border);
-  border-radius: 3px;
-}
-::-webkit-scrollbar-thumb:hover { background: var(--neon-cyan-dark); }
+/* Scrollen bleibt möglich, Leisten bleiben unsichtbar (BKG-Neon-Designregel). */
+* { scrollbar-width: none; }
+::-webkit-scrollbar { display: none; }
 
 /* ─── Progress / Usage Bars ─────────────────────────────────────────────── */
 .cyber-bar-track {
