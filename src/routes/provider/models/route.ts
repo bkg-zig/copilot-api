@@ -5,6 +5,7 @@ import { createHandlerLogger } from "~/lib/logger"
 import { withModelDisplayName } from "~/lib/catalog/model-display-name"
 import { getLocalProviderModelRecords } from "~/lib/catalog/provider-model-catalog"
 import { resolveProviderConfig } from "~/lib/providers/provider-resolver"
+import { filterHealthyProviderModels } from "~/lib/providers/model-health"
 import {
   handleCodexModelsProxy,
   isCodexUserAgent,
@@ -68,9 +69,13 @@ providerModelRoutes.get("/", async (c) => {
           503,
         )
       }
+      const healthyLocalModels = await filterHealthyProviderModels(
+        providerConfig,
+        localModels,
+      )
       return c.json({
         object: "list",
-        data: localModels.map((model) =>
+        data: healthyLocalModels.map((model) =>
           withModelDisplayName(model, providerConfig.name),
         ),
         has_more: false,
@@ -99,7 +104,16 @@ providerModelRoutes.get("/", async (c) => {
         && Array.isArray(body.data)
       ) {
         const upstreamModels = body.data
-        const data = upstreamModels.map((model: unknown) =>
+        const selectedModels = await filterHealthyProviderModels(
+          providerConfig,
+          upstreamModels.filter(
+            (model: unknown): model is Record<string, unknown> =>
+              typeof model === "object"
+              && model !== null
+              && !Array.isArray(model),
+          ),
+        )
+        const data = selectedModels.map((model: unknown) =>
           withModelDisplayName(model, providerConfig.name),
         )
         if (data.every((model, index) => model === upstreamModels[index])) {

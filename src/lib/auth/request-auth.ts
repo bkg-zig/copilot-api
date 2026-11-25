@@ -16,6 +16,7 @@ interface AuthMiddlewareOptions {
   allowOptionsBypass?: boolean
   allowWhenNoApiKeys?: boolean
   shouldSkipPath?: (path: string) => boolean
+  authorizeRequest?: (c: Context) => Promise<boolean> | boolean
 }
 
 export function getConfiguredApiKeys(): Array<string> {
@@ -114,6 +115,10 @@ export function createAuthMiddleware(
       || shouldSkipPath(c.req.path)
       || allowUnauthenticatedPaths.includes(c.req.path)
     ) {
+      return next()
+    }
+
+    if (options.authorizeRequest && (await options.authorizeRequest(c))) {
       return next()
     }
 

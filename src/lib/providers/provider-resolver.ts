@@ -1,6 +1,6 @@
 import {
   getRawProviderConfig,
-  getProviderConfig,
+  getProviderConfig as getRealProviderConfig,
   type ResolvedProviderConfig,
 } from "~/lib/config"
 import {
@@ -15,6 +15,8 @@ import { XAI_API_BASE_URL } from "~/lib/auth/oauth/xai"
 const AZURE_OPENAI_SCOPE = "https://cognitiveservices.azure.com/.default"
 
 type AzureAccessTokenProvider = () => Promise<string>
+
+type ProviderConfigLookup = (name: string) => ResolvedProviderConfig | null
 
 let cachedAzureAccessTokenProvider: Promise<AzureAccessTokenProvider> | null =
   null
@@ -58,6 +60,7 @@ function isMissingCodexCredentialsError(error: unknown): boolean {
 export async function resolveProviderConfig(
   providerName: string,
   getAzureAccessToken: () => Promise<string> = getDefaultAzureAccessToken,
+  getProviderConfig: ProviderConfigLookup = getRealProviderConfig,
 ): Promise<ResolvedProviderConfig | null> {
   const normalizedProviderName = providerName.trim()
   if (!normalizedProviderName) {

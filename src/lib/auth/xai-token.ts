@@ -27,7 +27,7 @@ function syncXaiProviderConfig(accountId: string, enable = false): void {
   setProviderConfig("xai", {
     ...existing,
     type: "openai-responses",
-    enabled: enable ? true : existing.enabled,
+    enabled: enable ? true : (existing.enabled ?? false),
     baseUrl: XAI_API_BASE_URL,
     authType: "oauth2",
     accountId,
@@ -53,13 +53,13 @@ export async function readXaiCredentials(
 
 export function persistXaiCredentials(
   credentials: XaiCredentials,
-  options: { alias?: string } = {},
+  options: { alias?: string; enableProvider?: boolean } = {},
 ): Promise<void> {
   return xaiAccounts.withMutationLock(async () => {
     await xaiAccounts.store.writeCredentials(credentials, {
       alias: options.alias,
     })
-    syncXaiProviderConfig(credentials.accountId, true)
+    syncXaiProviderConfig(credentials.accountId, options.enableProvider ?? true)
   })
 }
 

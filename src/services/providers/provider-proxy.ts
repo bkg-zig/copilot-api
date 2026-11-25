@@ -79,11 +79,17 @@ export function resolveProviderEndpointUrl(
       /\/v\d+(?:alpha|beta)?$/u.test(base) ? base : `${base}/v1beta`
     return `${apiBase}/${endpoint}`
   }
+  const normalizedBaseUrl = providerConfig.baseUrl.replace(/\/+$/u, "")
   const apiBaseUrl =
     providerConfig.modelsDevProviderId ?
-      providerConfig.baseUrl.replace(/\/(?:chat\/completions|responses)$/u, "")
-    : `${providerConfig.baseUrl}/v1`
-  return `${apiBaseUrl}/${endpoint}`
+      normalizedBaseUrl.replace(/\/(?:chat\/completions|responses)$/u, "")
+    : (
+      /\/v\d+(?:alpha|beta)?(?:\/openai)?$/u.test(normalizedBaseUrl)
+      || /\/(?:openai|gateway)$/u.test(normalizedBaseUrl)
+    ) ?
+      normalizedBaseUrl
+    : normalizedBaseUrl + "/v1"
+  return apiBaseUrl + "/" + endpoint
 }
 
 export function buildProviderUpstreamHeaders(
@@ -96,7 +102,7 @@ export function buildProviderUpstreamHeaders(
     || providerConfig.authType === "x-goog-api-key"
   ) {
     authHeaders[providerConfig.authType] = providerConfig.apiKey
-  } else {
+  } else if (providerConfig.authType !== "none") {
     authHeaders.authorization = `Bearer ${providerConfig.apiKey}`
   }
 
@@ -220,7 +226,10 @@ export async function forwardProviderMessages(
   providerConfig: ResolvedProviderConfig,
   payload: AnthropicMessagesPayload,
   requestHeaders: Headers,
-  options: { clientSignal?: AbortSignal } = {},
+  options: {
+    clientSignal?: AbortSignal
+    upstreamSignal?: AbortSignal
+  } = {},
 ): Promise<Response> {
   consola.log(`<-- model: ${payload.model}`)
   const headers = buildProviderUpstreamHeaders(providerConfig, requestHeaders)
@@ -237,6 +246,7 @@ export async function forwardProviderMessages(
       method: "POST",
       headers,
       body: JSON.stringify(payload),
+      signal: options.upstreamSignal,
     },
     {
       clientSignal: options.clientSignal,
@@ -250,7 +260,10 @@ export async function forwardProviderChatCompletions(
   providerConfig: ResolvedProviderConfig,
   payload: ChatCompletionsPayload,
   requestHeaders: Headers,
-  options: { clientSignal?: AbortSignal } = {},
+  options: {
+    clientSignal?: AbortSignal
+    upstreamSignal?: AbortSignal
+  } = {},
 ): Promise<Response> {
   consola.log(`<-- model: ${payload.model}`)
   const headers = buildProviderUpstreamHeaders(providerConfig, requestHeaders)
@@ -267,6 +280,7 @@ export async function forwardProviderChatCompletions(
       method: "POST",
       headers,
       body: JSON.stringify(payload),
+      signal: options.upstreamSignal,
     },
     {
       clientSignal: options.clientSignal,
@@ -280,7 +294,10 @@ export async function forwardProviderResponses(
   providerConfig: ResolvedProviderConfig,
   payload: ResponsesPayload,
   requestHeaders: Headers,
-  options: { clientSignal?: AbortSignal } = {},
+  options: {
+    clientSignal?: AbortSignal
+    upstreamSignal?: AbortSignal
+  } = {},
 ): Promise<Response> {
   consola.log(`<-- model: ${payload.model}`)
   const transportConfig = getUpstreamTransportConfig()
@@ -298,6 +315,7 @@ export async function forwardProviderResponses(
       method: "POST",
       headers,
       body: JSON.stringify(payload),
+      signal: options.upstreamSignal,
     },
     {
       headersTimeoutMs: transportConfig.headersTimeoutMs,

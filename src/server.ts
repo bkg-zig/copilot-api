@@ -1,4 +1,9 @@
 import { apiKeyPolicyMiddleware } from "./lib/auth/api-key-policy"
+import {
+  getWebAuthSession,
+  isDashboardSessionRequest,
+  type WebAuthSessionLookup,
+} from "./lib/auth/web-session"
 import { apiKeyUsageRoutes } from "./routes/admin/api-keys/route"
 import { Hono, type Context } from "hono"
 import { cors } from "hono/cors"
@@ -29,11 +34,14 @@ import { responsesRoutes } from "./routes/responses/route"
 import { tokenUsageRoute } from "./routes/token-usage/route"
 import { usageRoute } from "./routes/usage/route"
 import { videoRoutes } from "./routes/videos/route"
+import { webAuthAdminRoutes, webAuthRoutes } from "./routes/auth/route"
+import { providerAuthRoutes } from "./routes/auth/providers"
 export interface CreateServerOptions {
   networkExposed?: boolean
   getApiKeys?: () => Array<string>
   port?: number
   plugins?: GatewayPlugins
+  getWebAuthSession?: WebAuthSessionLookup
 }
 
 function resolveSameOriginCorsOrigin(
@@ -52,6 +60,9 @@ function resolveSameOriginCorsOrigin(
 }
 
 let cachedUsageViewerHtml: Promise<string> | null = null
+let cachedWebAuthHtml: Promise<string> | null = null
+let cachedBoilerplateCss: Promise<string> | null = null
+let cachedCopiUiCss: Promise<string> | null = null
 
 function readUsageViewerHtml(): Promise<string> {
   const usageViewerFileUrl = new URL("../pages/index.html", import.meta.url)
@@ -74,9 +85,59 @@ function readUsageViewerHtml(): Promise<string> {
   return cachedUsageViewerHtml
 }
 
+type PageAssetCache = { value: Promise<string> | null }
+
+function readPageAsset(
+  fileName: string,
+  cache: PageAssetCache,
+): Promise<string> {
+  const assetUrl = new URL(`../pages/${fileName}`, import.meta.url)
+  if (process.env.NODE_ENV !== "production")
+    return fsPromises.readFile(assetUrl, "utf8")
+  if (!cache.value) {
+    const pending = fsPromises
+      .readFile(assetUrl, "utf8")
+      .catch((error: unknown) => {
+        if (cache.value === pending) cache.value = null
+        throw error
+      })
+    cache.value = pending
+  }
+  return cache.value
+}
+
+function readWebAuthHtml(): Promise<string> {
+  const webAuthFileUrl = new URL("../pages/login.html", import.meta.url)
+  if (process.env.NODE_ENV !== "production") {
+    return fsPromises.readFile(webAuthFileUrl, "utf8")
+  }
+  if (!cachedWebAuthHtml) {
+    const pending: Promise<string> = fsPromises
+      .readFile(webAuthFileUrl, "utf8")
+      .catch((error: unknown) => {
+        if (cachedWebAuthHtml === pending) cachedWebAuthHtml = null
+        throw error
+      })
+    cachedWebAuthHtml = pending
+  }
+  return cachedWebAuthHtml
+}
+
+async function serveDashboard(
+  c: Context,
+  lookup: WebAuthSessionLookup,
+): Promise<Response> {
+  const user = await lookup(c)
+  if (!user) return c.html(await readWebAuthHtml())
+  return c.html(await readUsageViewerHtml())
+}
+
 export function createServer(options: CreateServerOptions = {}): Hono {
   const server = new Hono()
   const networkExposed = options.networkExposed ?? false
+  const webSessionLookup = options.getWebAuthSession ?? getWebAuthSession
+  const authorizeDashboardSession = (context: Context) =>
+    isDashboardSessionRequest(context, webSessionLookup)
 
   server.use(traceIdMiddleware)
   server.use(logger())
@@ -90,7 +151,18 @@ export function createServer(options: CreateServerOptions = {}): Hono {
     "*",
     createAuthMiddleware({
       getApiKeys: options.getApiKeys,
-      allowUnauthenticatedPaths: ["/", "/usage-viewer", "/usage-viewer/"],
+      allowUnauthenticatedPaths: [
+        "/",
+        "/usage-viewer",
+        "/usage-viewer/",
+        "/boilerplate.css",
+        "/copilot-ui.css",
+        "/auth/status",
+        "/auth/register",
+        "/auth/login",
+        "/auth/logout",
+      ],
+      authorizeRequest: authorizeDashboardSession,
       shouldSkipPath: (path) => path.startsWith("/admin/"),
       allowWhenNoApiKeys: !networkExposed,
     }),
@@ -101,6 +173,7 @@ export function createServer(options: CreateServerOptions = {}): Hono {
       getApiKeys: getConfiguredAdminApiKeys,
       allowUnauthenticatedPaths: [],
       allowWhenNoApiKeys: false,
+      authorizeRequest: authorizeDashboardSession,
     }),
   )
 
@@ -111,8 +184,41 @@ export function createServer(options: CreateServerOptions = {}): Hono {
     requestEventsMiddleware(options.plugins, options.port ?? 4141),
   )
 
-  server.get("/", (c) => c.text("Server running"))
-  server.get("/usage-viewer", async (c) => c.html(await readUsageViewerHtml()))
+  server.route("/auth", webAuthRoutes)
+  server.route("/admin/auth", webAuthAdminRoutes)
+  server.route("/auth/providers", providerAuthRoutes)
+
+  server.get("/boilerplate.css", async (c) => {
+    c.header("content-type", "text/css; charset=utf-8")
+    c.header("cache-control", "public, max-age=3600")
+    return c.body(
+      await readPageAsset("boilerplate.css", {
+        get value() {
+          return cachedBoilerplateCss
+        },
+        set value(next) {
+          cachedBoilerplateCss = next
+        },
+      }),
+    )
+  })
+  server.get("/copilot-ui.css", async (c) => {
+    c.header("content-type", "text/css; charset=utf-8")
+    c.header("cache-control", "public, max-age=300")
+    return c.body(
+      await readPageAsset("copilot-ui.css", {
+        get value() {
+          return cachedCopiUiCss
+        },
+        set value(next) {
+          cachedCopiUiCss = next
+        },
+      }),
+    )
+  })
+
+  server.get("/", (c) => serveDashboard(c, webSessionLookup))
+  server.get("/usage-viewer", (c) => serveDashboard(c, webSessionLookup))
   server.get("/usage-viewer/", (c) => c.redirect("/usage-viewer", 301))
 
   server.route("/chat/completions", completionRoutes)

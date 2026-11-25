@@ -58,7 +58,11 @@ export function resolveProviderAuthType(
     return defaultAuthType
   }
 
-  if (authType === "x-api-key" || authType === "x-goog-api-key") {
+  if (
+    authType === "none"
+    || authType === "x-api-key"
+    || authType === "x-goog-api-key"
+  ) {
     return authType
   }
 
@@ -88,7 +92,8 @@ function isProviderApiKeyRequired(
   authType: ProviderAuthType,
 ): boolean {
   return (
-    authType !== "azure-entra"
+    authType !== "none"
+    && authType !== "azure-entra"
     && !(
       (providerName === "codex" || providerName === "xai")
       && authType === "oauth2"
@@ -197,6 +202,8 @@ export function getProviderConfig(name: string): ResolvedProviderConfig | null {
     pricingCurrency: normalizePricingCurrency(provider.pricingCurrency),
     models: provider.models,
     agentsModels: provider.agentsModels,
+    manualModels: provider.manualModels,
+    disabledModels: provider.disabledModels,
   }
 }
 

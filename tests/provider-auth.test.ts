@@ -108,6 +108,22 @@ describe("resolveProviderAuthType", () => {
     expect(headers.authorization).toBe("Bearer xai-access-token")
     expect(headers["x-api-key"]).toBeUndefined()
   })
+  test("supports explicit no-auth upstreams without forwarding credentials", () => {
+    expect(resolveProviderAuthType("bridge", "none", "openai-compatible")).toBe(
+      "none",
+    )
+    const headers = buildProviderUpstreamHeaders(
+      createProviderConfig({ authType: "none", apiKey: "" }),
+      new Headers({
+        authorization: "Bearer client-secret",
+        "x-api-key": "client-secret",
+      }),
+    )
+    expect(headers.authorization).toBeUndefined()
+    expect(headers["x-api-key"]).toBeUndefined()
+    expect(headers["content-type"]).toBe("application/json")
+  })
+
   test("falls back to OpenAI-compatible default for invalid authType", () => {
     expect(
       resolveProviderAuthType("dash", "invalid-auth-type", "openai-compatible"),
@@ -189,6 +205,28 @@ describe("provider endpoint URL", () => {
         "chat/completions",
       ),
     ).toBe("https://api.example.com/v1/chat/completions")
+  })
+
+  test.each([
+    [
+      "https://text.pollinations.ai/openai",
+      "https://text.pollinations.ai/openai/chat/completions",
+    ],
+    [
+      "https://api.kilo.ai/api/gateway",
+      "https://api.kilo.ai/api/gateway/chat/completions",
+    ],
+    [
+      "https://generativelanguage.googleapis.com/v1beta/openai",
+      "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
+    ],
+  ])("preserves OpenAI-compatible base path %s", (baseUrl, expected) => {
+    expect(
+      resolveProviderEndpointUrl(
+        createProviderConfig({ baseUrl }),
+        "chat/completions",
+      ),
+    ).toBe(expected)
   })
 
   test("preserves the existing manual-provider URL convention", () => {

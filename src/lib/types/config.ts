@@ -14,6 +14,7 @@ export type CodexReasoningEffort =
   | "ultra"
 
 export type ProviderAuthType =
+  | "none"
   | "authorization"
   | "azure-entra"
   | "oauth2"
@@ -79,6 +80,8 @@ export interface ProviderConfig {
   pricingCurrency?: string
   models?: Record<string, ModelConfig>
   agentsModels?: Array<string>
+  manualModels?: Array<string>
+  disabledModels?: Array<string>
 }
 
 export interface ResolvedProviderConfig {
@@ -92,6 +95,8 @@ export interface ResolvedProviderConfig {
   pricingCurrency?: string
   models?: Record<string, ModelConfig>
   agentsModels?: Array<string>
+  manualModels?: Array<string>
+  disabledModels?: Array<string>
 }
 
 export type BuiltinProviderInputModality = "text" | "image"

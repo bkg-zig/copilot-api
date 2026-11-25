@@ -22,7 +22,12 @@ export async function forwardGoogleGenerateContent(
   model: string,
   payload: GoogleGenerateContentPayload | GoogleGenerateContentRequest,
   requestHeaders: Headers,
-  options: { stream: boolean; clientSignal: AbortSignal; sessionId?: string },
+  options: {
+    stream: boolean
+    clientSignal?: AbortSignal
+    upstreamSignal?: AbortSignal
+    sessionId?: string
+  },
 ): Promise<Response> {
   const upstreamModel = model.replace(/^models\//u, "")
   consola.log(`<-- model: ${upstreamModel}`)
@@ -43,6 +48,7 @@ export async function forwardGoogleGenerateContent(
       method: "POST",
       headers,
       body: JSON.stringify(payload),
+      signal: options.upstreamSignal,
     },
     {
       clientSignal: options.clientSignal,

@@ -21,9 +21,12 @@ RUN bun install --frozen-lockfile --production --ignore-scripts --no-cache
 
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/pages ./pages
+COPY --from=builder /app/deploy/prepare-config.ts ./deploy/prepare-config.ts
 COPY entrypoint.sh /entrypoint.sh
 
 RUN chmod +x /entrypoint.sh && \
+    chmod 0755 /app/deploy && \
+    chmod 0644 /app/deploy/prepare-config.ts && \
     mkdir -p /data && \
     chown bun:bun /data && \
     chmod 700 /data

@@ -5,8 +5,10 @@ import { forwardError } from "~/lib/http/error"
 import { getModelMappings, setModelMappings } from "~/lib/config"
 import { reloadServerConfig } from "~/lib/config/config-reload"
 import { PATHS } from "~/lib/storage/paths"
+import { providerAdminRoutes } from "~/routes/admin/config/providers"
 
 export const configRoutes = new Hono()
+configRoutes.route("/providers", providerAdminRoutes)
 
 const modelMappingsRequestSchema = z.object({
   modelMappings: z.record(z.string(), z.string()),

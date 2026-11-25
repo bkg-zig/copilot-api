@@ -237,7 +237,10 @@ function toOpencodeModel(
 export async function handleOpencodeModels(c: Context): Promise<Response> {
   const models = await getAgentModels(
     stripInternalRequestHeaders(c.req.raw.headers),
-    { includeImageModels: true },
+    {
+      includeImageModels: true,
+      healthInitialWaitMs: c.req.query("wait") === "0" ? 0 : undefined,
+    },
   )
   const contextWindow = getOpencodeModelContextWindow()
   c.header("Cache-Control", "private, no-store")

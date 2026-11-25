@@ -4,8 +4,9 @@ import os from "node:os"
 import { getGrokBuildVersion } from "~/lib/providers/grok-build"
 import { XAI_API_BASE_URL } from "~/lib/auth/oauth/xai"
 import { resolveProviderConfig } from "~/lib/providers/provider-resolver"
-import { readXaiCredentials } from "~/lib/auth/xai-token"
-import { isGitHubCopilotEnabled } from "~/lib/providers/github-copilot-provider"
+import { getRawProviderConfig } from "~/lib/config"
+import { getXaiAccessToken, readXaiCredentials } from "~/lib/auth/xai-token"
+import { readGitHubToken } from "~/lib/auth/credential-store"
 import { getCopilotUsage } from "~/services/github/get-copilot-usage"
 import { resolveProviderEndpointUrl } from "~/services/providers/provider-proxy"
 import type {
@@ -378,21 +379,24 @@ export async function getSubscriptionUsage(
   signal?: AbortSignal,
 ): Promise<SubscriptionUsage | null> {
   if (provider === "github-copilot") {
-    if (!isGitHubCopilotEnabled()) return null
+    const githubToken = await readGitHubToken()
+    if (!githubToken) return null
     const timeout = AbortSignal.timeout(15_000)
     const usage = await getCopilotUsage(
-      undefined,
+      githubToken,
       signal ? AbortSignal.any([signal, timeout]) : timeout,
     )
     return usage ? normalizeCopilotUsage(usage) : null
   }
-  const config = await resolveProviderConfig(provider)
-  if (!config) return null
-  if (provider !== "opencode-go" && config.authType !== "oauth2") return null
+  const rawConfig = getRawProviderConfig(provider)
+  if (!rawConfig) return null
+  if (provider !== "opencode-go" && rawConfig.authType !== "oauth2") return null
 
   let headers: Headers
   let url: string
   if (provider === "opencode-go") {
+    const config = await resolveProviderConfig(provider)
+    if (!config) return null
     url = resolveProviderEndpointUrl(config, "usage")
     headers = new Headers({
       Authorization: `Bearer ${config.apiKey}`,
@@ -417,9 +421,10 @@ export async function getSubscriptionUsage(
     )
     url = `${CODEX_API_BASE_URL}/wham/usage`
   } else {
+    const accessToken = await getXaiAccessToken()
     const credentials = await readXaiCredentials()
-    if (!credentials) return null
-    if (credentials.accessToken !== config.apiKey) {
+    if (!credentials || !accessToken) return null
+    if (credentials.accessToken !== accessToken) {
       throw new Error("Subscription account changed during the usage query")
     }
     const version = await getGrokBuildVersion()
@@ -432,7 +437,7 @@ export async function getSubscriptionUsage(
       : process.arch === "arm64" ? "aarch64"
       : process.arch
     headers = new Headers({
-      Authorization: `Bearer ${config.apiKey}`,
+      Authorization: `Bearer ${accessToken}`,
       "X-XAI-Token-Auth": "xai-grok-cli",
       "x-userid": credentials.accountId,
       "x-grok-client-version": version,

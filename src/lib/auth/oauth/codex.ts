@@ -44,6 +44,7 @@ export interface LoginCodexOptions {
   onAuth: (info: CodexAuthInfo) => void
   onPrompt: (message: string) => Promise<string>
   onProgress?: (message: string) => void
+  onAuthorizationCode?: (state: string, signal: AbortSignal) => Promise<string>
   signal?: AbortSignal
 }
 
@@ -454,13 +455,48 @@ export async function loginCodex(
 
   let code: string | null = null
   let callbackError: CodexOAuthError | undefined
-  try {
-    code = await waitForAuthorizationCode(state, options.signal)
-  } catch (error) {
-    options.signal?.throwIfAborted()
-    if (!(error instanceof CodexOAuthError)) throw error
-    callbackError = error
+  if (options.onAuthorizationCode) {
+    const flowController = new AbortController()
+    const flowSignal =
+      options.signal ?
+        AbortSignal.any([options.signal, flowController.signal])
+      : flowController.signal
+    let callback: Promise<string | null> | undefined
+    try {
+      callback = waitForAuthorizationCode(state, flowSignal).catch((error) => {
+        if (flowSignal.aborted) throw error
+        if (error instanceof CodexOAuthError) {
+          callbackError = error
+          return null
+        }
+        throw error
+      })
+      const supplied = await Promise.race([
+        callback,
+        options.onAuthorizationCode(state, flowSignal),
+      ])
+      options.signal?.throwIfAborted()
+      if (supplied) {
+        const parsed = parseAuthorizationInput(supplied)
+        if (parsed.state && parsed.state !== state) {
+          throw new Error("Codex OAuth state mismatch")
+        }
+        code = parsed.code ?? null
+      }
+    } finally {
+      flowController.abort(new Error("Codex OAuth code received or flow ended"))
+      await callback?.catch(() => null)
+    }
+  } else {
+    try {
+      code = await waitForAuthorizationCode(state, options.signal)
+    } catch (error) {
+      options.signal?.throwIfAborted()
+      if (!(error instanceof CodexOAuthError)) throw error
+      callbackError = error
+    }
   }
+
   options.signal?.throwIfAborted()
   if (!code) {
     const input = await options.onPrompt(

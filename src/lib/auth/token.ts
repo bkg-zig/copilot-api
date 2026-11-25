@@ -175,7 +175,10 @@ export async function persistCodexCredentials(
     if (options.syncProvider !== false) {
       syncCodexProviderConfig({
         accountId: options.activateAccount ? credentials.accountId : undefined,
-        enabled: options.enableProvider ? true : undefined,
+        enabled:
+          options.enableProvider === true ? true
+          : options.enableProvider === false ? false
+          : undefined,
       })
     }
     if (
