@@ -8,6 +8,12 @@ interface QuickProviderConfig {
 }
 
 export const QUICK_PROVIDER_CONFIGS = {
+  voice: {
+    type: "openai-compatible",
+    baseUrl: "https://api.eysho.info/voice",
+    pricingCurrency: "USD",
+    editableType: true,
+  },
   "opencode-go": {
     type: "openai-compatible",
     baseUrl: "https://opencode.ai/zen/go",

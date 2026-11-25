@@ -40,7 +40,7 @@ body::after {
   font-size: clamp(27px, 3vw, 38px);
   letter-spacing: 0.09em;
   text-transform: uppercase;
-  text-shadow: 0 0 18px #00f6ff26;
+  text-shadow: 0 0 18px rgba(0, 255, 204, 0.15);
 }
 .page-subtitle {
   color: var(--text-secondary);
@@ -68,7 +68,7 @@ body::after {
   color: var(--neon-cyan);
   border: 1px solid var(--neon-cyan-dark);
   background: var(--neon-cyan-alpha);
-  box-shadow: inset 0 0 12px #00f6ff0d;
+  box-shadow: inset 0 0 12px rgba(0, 255, 204, 0.05);
 }
 .page-tab:focus-visible,
 .models-action:focus-visible {
@@ -292,13 +292,13 @@ body::after {
 }
 .playground-message.user {
   align-self: flex-end;
-  border-color: #007f8766;
-  background: #00f6ff0c;
+  border-color: rgba(0, 255, 204, 0.4);
+  background: rgba(0, 255, 204, 0.05);
 }
 .playground-message.assistant {
   align-self: flex-start;
-  border-color: #9d4edd55;
-  background: #9d4edd0b;
+  border-color: rgba(185, 140, 255, 0.33);
+  background: rgba(185, 140, 255, 0.04);
 }
 .playground-message-label {
   display: block;
@@ -607,14 +607,13 @@ body::after {
   }
 }
 
-/* Copi command surface: neon navigation rail, sharp panels and explicit action states. */
+/* Copi command surface: neon navigation rail, sharp panels and explicit action states.
+   Farb-Tokens kommen ausschließlich aus boilerplate.css (Skidel-Palette). */
 :root {
   --page-zoom: 1;
-  --copi-blue: #4dc3ff;
-  --copi-lime: #b5ff2b;
-  --copi-violet: #b98cff;
-  --text-secondary: #74c9f2;
-  --text-muted: #3b7189;
+  --copi-blue: var(--neon-blue);
+  --copi-lime: var(--neon-lime);
+  --copi-violet: var(--neon-violet);
 }
 
 html {
@@ -624,11 +623,11 @@ html {
 body {
   background-color: var(--cyber-bg-deep);
   background-image:
-    linear-gradient(rgba(0, 246, 255, 0.035) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(0, 246, 255, 0.035) 1px, transparent 1px),
-    radial-gradient(circle at 20% 0%, rgba(0, 246, 255, 0.08), transparent 55%);
+    linear-gradient(rgba(0, 255, 204, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 255, 204, 0.035) 1px, transparent 1px),
+    radial-gradient(circle at 20% 0%, rgba(0, 255, 204, 0.08), transparent 55%);
   background-size: 32px 32px, 32px 32px, 100% 100%;
-  color: #d7faff;
+  color: var(--text-primary);
   font-family: var(--font-mono);
   font-size: 12px;
 }
@@ -637,8 +636,8 @@ body::after {
   opacity: 0.5;
   background-image: repeating-linear-gradient(
     to bottom,
-    rgba(0, 246, 255, 0.015) 0,
-    rgba(0, 246, 255, 0.015) 1px,
+    rgba(0, 255, 204, 0.015) 0,
+    rgba(0, 255, 204, 0.015) 1px,
     transparent 1px,
     transparent 4px
   );
@@ -660,7 +659,7 @@ body::after {
   gap: 18px;
   height: 100vh;
   padding: 20px 12px 14px;
-  border-right: 1px solid #00f6ff33;
+  border-right: 1px solid rgba(0, 255, 204, 0.2);
   background: linear-gradient(180deg, #06131a 0%, var(--cyber-bg-deep) 100%);
 }
 
@@ -931,7 +930,7 @@ body::after {
   border: 1px solid var(--border-hover);
   border-radius: 0;
   background: var(--cyber-bg-deep);
-  color: #d7faff;
+  color: var(--text-primary);
   font: 12px var(--font-mono);
 }
 
@@ -975,13 +974,13 @@ body::after {
 
 .primary-action {
   border-color: var(--neon-cyan);
-  background: #003b42;
+  background: rgba(0, 255, 204, 0.08);
   color: var(--neon-cyan-bright);
 }
 
 .primary-action:hover {
-  background: #00545e;
-  color: #ffffff;
+  background: rgba(0, 255, 204, 0.18);
+  color: var(--text-primary);
 }
 
 .secondary-action,
@@ -1008,7 +1007,7 @@ body::after {
 
 .danger-action:hover {
   background: #4a0c1b;
-  color: #ffffff;
+  color: var(--text-primary);
 }
 
 button:focus-visible,
@@ -1082,7 +1081,7 @@ textarea:disabled {
 }
 
 .subscriptions-page {
-  --quota-text: #d7faff;
+  --quota-text: var(--text-primary);
   --quota-muted: var(--copi-blue);
   --quota-faint: var(--text-muted);
   --quota-line: var(--border);

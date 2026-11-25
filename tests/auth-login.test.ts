@@ -95,7 +95,7 @@ describe("auth login validation", () => {
     )
 
     expect(output).toBe(
-      "Unknown provider 'unknown'. Expected one of: copilot, codex, xai, opencode-go, kimi, deepseek, dashscope, openrouter, custom",
+      "Unknown provider 'unknown'. Expected one of: copilot, codex, xai, voice, opencode-go, kimi, deepseek, dashscope, openrouter, custom",
     )
   })
 

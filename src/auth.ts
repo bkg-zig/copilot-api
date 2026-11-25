@@ -101,6 +101,7 @@ const BUILTIN_PROVIDER_LABELS: Record<BuiltinProviderName, string> = {
 }
 const AUTH_PROVIDER_LABELS: Record<AuthProviderName, string> = {
   ...BUILTIN_PROVIDER_LABELS,
+  voice: "Voice (api.eysho.info)",
   "opencode-go": "OpenCode Go",
   kimi: "Kimi",
   deepseek: "DeepSeek",
@@ -198,8 +199,8 @@ async function promptRequiredText(
 function canUseMaskedPrompt(): boolean {
   return Boolean(
     process.stdin.isTTY
-      && process.stdout.isTTY
-      && typeof process.stdin.setRawMode === "function",
+    && process.stdout.isTTY
+    && typeof process.stdin.setRawMode === "function",
   )
 }
 

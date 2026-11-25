@@ -30,3 +30,4 @@ dist/
 
 # Local BKG deployment credentials
 .secrets/
+legend/

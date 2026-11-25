@@ -34,6 +34,9 @@ import { responsesRoutes } from "./routes/responses/route"
 import { tokenUsageRoute } from "./routes/token-usage/route"
 import { usageRoute } from "./routes/usage/route"
 import { videoRoutes } from "./routes/videos/route"
+import { createStateAdminRoutes, createStateRoutes } from "./routes/state/route"
+import { createStateInjectionMiddleware } from "./lib/state/injection"
+import { getStateRepository } from "./lib/state/index"
 import { webAuthAdminRoutes, webAuthRoutes } from "./routes/auth/route"
 import { providerAuthRoutes } from "./routes/auth/providers"
 export interface CreateServerOptions {
@@ -183,6 +186,10 @@ export function createServer(options: CreateServerOptions = {}): Hono {
     "*",
     requestEventsMiddleware(options.plugins, options.port ?? 4141),
   )
+  server.use(
+    "*",
+    createStateInjectionMiddleware(() => getStateRepository()),
+  )
 
   server.route("/auth", webAuthRoutes)
   server.route("/admin/auth", webAuthAdminRoutes)
@@ -234,6 +241,8 @@ export function createServer(options: CreateServerOptions = {}): Hono {
   server.route("/alpha/search", alphaSearchRoutes)
   server.route("/images", imageRoutes)
   server.route("/videos", videoRoutes)
+  server.route("/", createStateRoutes())
+  server.route("/admin", createStateAdminRoutes())
 
   // Compatibility with tools that expect v1/ prefix
   server.route("/v1/chat/completions", completionRoutes)

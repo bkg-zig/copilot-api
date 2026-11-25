@@ -14,7 +14,7 @@
       body {
         font-family: var(--font-mono);
         background: var(--cyber-bg-deep);
-        color: #d7faff;
+        color: var(--text-primary);
       }
       h1 {
         color: var(--neon-cyan);
@@ -43,9 +43,9 @@
         padding: 24px;
         background-color: var(--cyber-bg-deep);
         background-image:
-          linear-gradient(rgba(0, 246, 255, 0.035) 1px, transparent 1px),
-          linear-gradient(90deg, rgba(0, 246, 255, 0.035) 1px, transparent 1px),
-          radial-gradient(ellipse at 50% 8%, rgba(0, 246, 255, 0.1), transparent 72%);
+          linear-gradient(rgba(0, 255, 204, 0.035) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(0, 255, 204, 0.035) 1px, transparent 1px),
+          radial-gradient(ellipse at 50% 8%, rgba(0, 255, 204, 0.1), transparent 72%);
         background-size: 32px 32px, 32px 32px, 100% 100%;
       }
       main {
@@ -117,7 +117,7 @@
         border-radius: 0;
         outline: none;
         background: var(--cyber-bg-deep);
-        color: #d7faff;
+        color: var(--text-primary);
         font: 12px var(--font-mono);
       }
       input:focus {
@@ -134,7 +134,7 @@
         margin-top: 22px;
         border: 1px solid var(--neon-cyan);
         border-radius: 0;
-        background: #003b42;
+        background: rgba(0, 255, 204, 0.08);
         color: var(--neon-cyan-bright);
         font: 700 11px var(--font-mono);
         letter-spacing: 0.12em;
@@ -142,8 +142,8 @@
         cursor: pointer;
       }
       button:hover {
-        background: #00545e;
-        color: #ffffff;
+        background: rgba(0, 255, 204, 0.18);
+        color: var(--text-primary);
       }
       button:focus-visible,
       summary:focus-visible {
@@ -159,7 +159,7 @@
         margin: 14px 0 0;
         border-left: 3px solid var(--neon-red);
         padding: 7px 12px;
-        background: rgba(255, 23, 68, 0.08);
+        background: rgba(255, 77, 109, 0.08);
         color: var(--neon-red-bright);
         font: 11px var(--font-mono);
         line-height: 1.5;
@@ -188,7 +188,7 @@
         margin: 10px 0 0;
         border-left: 3px solid var(--neon-green);
         padding: 7px 12px;
-        background: rgba(57, 255, 20, 0.07);
+        background: rgba(0, 255, 65, 0.07);
         color: var(--neon-green-bright);
         font: 11px var(--font-mono);
         line-height: 1.5;

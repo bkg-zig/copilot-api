@@ -20,49 +20,101 @@
   --cyber-panel-3:   #0e151d;
 
   /* Neon Primär: CYAN */
-  --neon-cyan:        #00f6ff;
+  --neon-cyan:        #00ffcc;
   --neon-cyan-bright: #5cffff;
   --neon-cyan-dark:   #007f87;
-  --neon-cyan-alpha:  rgba(0, 246, 255, 0.15);
+  --neon-cyan-alpha:  rgba(0, 255, 204, 0.15);
 
   /* Neon Sekundär: MAGENTA (AI/Agent) */
-  --neon-magenta:        #ff00e5;
-  --neon-magenta-bright: #ff5cf2;
+  --neon-magenta:        #ff00ff;
+  --neon-magenta-bright: #ff5fd7;
   --neon-magenta-dark:   #850078;
-  --neon-magenta-alpha:  rgba(255, 0, 229, 0.15);
+  --neon-magenta-alpha:  rgba(255, 0, 255, 0.15);
 
   /* WARNING: AMBER */
-  --neon-amber:        #ffb000;
-  --neon-amber-bright: #ffd166;
-  --neon-amber-alpha:  rgba(255, 176, 0, 0.15);
+  --neon-amber:        #ff8800;
+  --neon-amber-bright: #ffc94d;
+  --neon-amber-alpha:  rgba(255, 136, 0, 0.15);
 
   /* ERROR: RED */
-  --neon-red:        #ff1744;
-  --neon-red-bright: #ff4d6d;
-  --neon-red-alpha:  rgba(255, 23, 68, 0.15);
+  --neon-red:        #ff4d6d;
+  --neon-red-bright: #ff7f6e;
+  --neon-red-alpha:  rgba(255, 77, 109, 0.15);
 
   /* SUCCESS: ACID GREEN */
-  --neon-green:        #39ff14;
-  --neon-green-bright: #7cff5c;
-  --neon-green-alpha:  rgba(57, 255, 20, 0.15);
+  --neon-green:        #00ff41;
+  --neon-green-bright: #9dff9a;
+  --neon-green-alpha:  rgba(0, 255, 65, 0.15);
 
   /* VIOLET (selten, Memory/Context) */
-  --neon-violet:        #9d4edd;
-  --neon-violet-bright: #c77dff;
+  --neon-violet:        #b98cff;
+  --neon-violet-bright: #d77bff;
 
   /* ORANGE (selten, Performance) */
-  --neon-orange:        #ff6b00;
-  --neon-orange-bright: #ff9a3c;
+  --neon-orange:        #ff8800;
+  --neon-orange-bright: #ffc94d;
 
-  /* Text */
-  --text-primary:   #d7faff;
-  --text-secondary: #78909c;
-  --text-muted:     #40515b;
+  /* Text — semantische Neon-Farben, keine Grautöne (Skidel-Palette) */
+  --text-primary:   #e8f4ff;
+  --text-secondary: #a8f0ff;
+  --text-muted:     #9dff9a;
 
   /* Borders */
-  --border:         #17252d;
-  --border-hover:   #007f87;
-  --border-active:  #00f6ff;
+  --border:         #0f3d45;
+  --border-hover:   #00ffcc;
+  --border-active:  #00ffcc;
+
+  /* Legacy-Tokens der eingebetteten Dashboards auf dieselbe Neon-Palette
+     abbilden, damit keine var()-Referenz leer bleibt. */
+  --color-bg:            var(--cyber-bg);
+  --color-bg-soft:       var(--cyber-panel);
+  --color-bg-light-1:    var(--cyber-panel);
+  --color-bg-light-2:    var(--cyber-panel-2);
+  --color-bg-light-3:    var(--cyber-panel-3);
+  --color-bg-light-4:    #123039;
+  --color-surface:       var(--cyber-panel);
+  --color-sunken:        var(--cyber-bg-deep);
+  --color-line:          var(--border);
+  --color-ink:           var(--text-primary);
+  --color-ink-soft:      var(--text-secondary);
+  --color-ink-faint:     var(--text-muted);
+  --color-fg-lightest:   #e8f4ff;
+  --color-fg-light:      #a8f0ff;
+  --color-fg-medium:     #4dc3ff;
+  --color-fg-dark:       #b98cff;
+  --color-fg-darker:     #9d4edd;
+  --color-gray:          #a8f0ff;
+  --color-gray-accent:   #9dff9a;
+  --color-blue:          #00ffcc;
+  --color-blue-accent:   #5cffff;
+  --color-aqua-accent:   #4dffb8;
+  --color-green:         var(--neon-green);
+  --color-green-accent:  #b5ff2b;
+  --color-yellow-accent: var(--neon-amber-bright);
+  --color-red:           var(--neon-red);
+  --color-purple-accent: #d77bff;
+
+  /* Skidel-Neon-Palette: zusätzliche Farben und semantische Textrollen. */
+  --neon-blue:        #4dc3ff;
+  --neon-lime:        #b5ff2b;
+  --neon-yellow:      #ffff00;
+  --neon-pink:        #ff5fd7;
+  --neon-mint:        #4dffb8;
+  --neon-gold:        #ffc94d;
+  --neon-coral:       #ff7f6e;
+  --neon-purple:      #d77bff;
+  --neon-azure:       #6f8cff;
+  --neon-peach:       #ffb38a;
+  --neon-ice:         #e8f4ff;
+  --neon-rose:        #ff9ec7;
+  --terminal-green:   #00ff41;
+  --text-title:       var(--neon-cyan);
+  --text-section:     var(--neon-violet);
+  --text-subsection:  var(--neon-blue);
+  --text-code:        var(--neon-lime);
+  --text-ok:          var(--neon-lime);
+  --text-warn:        var(--neon-orange);
+  --text-error:       var(--neon-red);
 
   /* Fonts */
   --font-mono: 'JetBrains Mono', 'IBM Plex Mono', 'Fira Code', 'Courier New', monospace;
@@ -83,6 +135,7 @@
   box-sizing: border-box;
   margin: 0;
   padding: 0;
+  border-color: var(--border);
 }
 
 /* ─── Base ───────────────────────────────────────────────────────────────── */

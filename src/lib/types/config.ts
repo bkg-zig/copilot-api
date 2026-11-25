@@ -4,14 +4,7 @@ import type { TokenUsagePricingConfig } from "./pricing"
 export type ModelReasoningField = "reasoning" | "reasoning_content"
 
 export type CodexReasoningEffort =
-  | "none"
-  | "minimal"
-  | "low"
-  | "medium"
-  | "high"
-  | "xhigh"
-  | "max"
-  | "ultra"
+  "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra"
 
 export type ProviderAuthType =
   | "none"
@@ -22,10 +15,7 @@ export type ProviderAuthType =
   | "x-goog-api-key"
 
 export type ProviderType =
-  | "anthropic"
-  | "openai-compatible"
-  | "openai-responses"
-  | "google"
+  "anthropic" | "openai-compatible" | "openai-responses" | "google"
 
 export type ToolContentSupportType = "array" | "image" | "pdf"
 
@@ -166,4 +156,17 @@ export interface AppConfig {
   claudeTokenMultiplier?: number
   // Days of token_usage_events to keep. Unset means keep every row.
   tokenUsageRetentionDays?: number
+  // Postgres/pgvector working state. Absent means the built-in defaults.
+  state?: {
+    enabled?: boolean
+    autoMigrate?: boolean
+    extractorModel?: string
+    allowMeteredExtraction?: boolean
+    embeddingProvider?: string
+    embeddingModel?: string
+    embeddingDimensions?: number
+    blueprintSearchLimit?: number
+    injection?: { enabled?: boolean; includeBlueprint?: boolean }
+    constraints?: Record<string, string[]>
+  }
 }
