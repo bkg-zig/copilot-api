@@ -16,6 +16,10 @@ import { state } from "~/lib/state"
 import { getRawProviderConfig, setProviderConfig } from "~/lib/config"
 import { QUICK_PROVIDER_CONFIGS } from "~/lib/config/quick-providers"
 import { getWebAuthSession } from "~/lib/auth/web-session"
+import {
+  buildAnthropicProviderConfig,
+  checkAnthropicApiKey,
+} from "~/lib/providers/anthropic-api-key"
 
 export const providerAuthRoutes = new Hono()
 
@@ -179,6 +183,7 @@ providerAuthRoutes.get("/status", async (c) => {
       getXaiAccounts(),
     ])
     const go = getRawProviderConfig("opencode-go")
+    const anthropic = getRawProviderConfig("anthropic")
     return c.json({
       providers: {
         "github-copilot": { connected: Boolean(githubToken), account: null },
@@ -189,6 +194,12 @@ providerAuthRoutes.get("/status", async (c) => {
         xai: {
           connected: xaiAccounts.some((item) => item.active),
           accounts: xaiAccounts,
+        },
+        anthropic: {
+          connected: Boolean(
+            anthropic?.enabled !== false && anthropic?.apiKey?.trim(),
+          ),
+          requiresApiKey: true,
         },
         "opencode-go": {
           connected: Boolean(go?.enabled !== false && go?.apiKey?.trim()),
@@ -322,5 +333,25 @@ providerAuthRoutes.post("/opencode-go", async (c) => {
     enabled: true,
     pricingCurrency: defaults.pricingCurrency,
   })
+  return c.json({ connected: true })
+})
+
+providerAuthRoutes.post("/anthropic", async (c) => {
+  const user = await requireWebUser(c)
+  if (!user) return c.json({ error: "Unauthorized" }, 401)
+  const body: unknown = await c.req.json().catch(() => null)
+  const checked = checkAnthropicApiKey(
+    body && typeof body === "object" && !Array.isArray(body) ?
+      (body as Record<string, unknown>).apiKey
+    : null,
+  )
+  if (!checked.ok) return c.json({ error: checked.error }, 400)
+  setProviderConfig(
+    "anthropic",
+    buildAnthropicProviderConfig(
+      getRawProviderConfig("anthropic") ?? {},
+      checked.apiKey,
+    ),
+  )
   return c.json({ connected: true })
 })

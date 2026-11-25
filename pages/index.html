@@ -2832,6 +2832,7 @@
             ],
             ["codex", "OpenAI Codex", "OpenAI OAuth / Codex", "codex"],
             ["xai", "xAI", "Grok Device Login", "xai"],
+            ["anthropic", "Anthropic", "Claude API key", "anthropic"],
             [
               "opencode-go",
               "OpenCode Go",
@@ -2854,7 +2855,9 @@
                     ? "AUTHORIZING"
                     : "NOT CONNECTED";
                 const button =
-                  id === "opencode-go"
+                  id === "anthropic"
+                    ? `<form data-anthropic-form class="provider-connect-form"><label class="field-label" for="anthropic-api-key">API key</label><input id="anthropic-api-key" name="apiKey" type="password" autocomplete="off" placeholder="sk-ant-… from the Anthropic Console" required><button class="btn btn-primary" type="submit">Save key</button></form>`
+                    : id === "opencode-go"
                     ? `<form data-opencode-go-form class="provider-connect-form"><label class="field-label" for="opencode-go-key">API token</label><input id="opencode-go-key" name="apiKey" type="password" autocomplete="off" placeholder="OpenCode Go token" required><button class="btn btn-primary" type="submit">Save token</button></form>`
                     : `<button class="btn btn-primary" type="button" data-provider-auth-start="${id}" ${state.providerAuthBusy || active ? "disabled" : ""}>${connected ? "Reconnect" : "Connect account"}</button>`;
                 let details = "";
@@ -2955,7 +2958,7 @@
 
         async function submitCodexOAuthCallback(event) {
           event.preventDefault();
-          const form = event.currentTarget;
+          const form = event.target.closest("form");
           const input = String(new FormData(form).get("input") || "").trim();
           const operationId = state.providerAuthOperation?.id;
           if (!input || !operationId) return;
@@ -2983,7 +2986,7 @@
 
         async function saveOpenCodeGoToken(event) {
           event.preventDefault();
-          const form = event.currentTarget;
+          const form = event.target.closest("form");
           const apiKey = String(new FormData(form).get("apiKey") || "").trim();
           try {
             const response = await fetch("/auth/providers/opencode-go", {
@@ -2998,6 +3001,29 @@
             form.reset();
             await loadProviderAuthStatus();
             await refreshSubscriptionQuotas("opencode-go");
+          } catch (error) {
+            state.providerAuthError = getErrorMessage(error);
+            render("subscriptions");
+          }
+        }
+
+        async function saveAnthropicKey(event) {
+          event.preventDefault();
+          const form = event.target.closest("form");
+          const apiKey = String(new FormData(form).get("apiKey") || "").trim();
+          try {
+            const response = await fetch("/auth/providers/anthropic", {
+              method: "POST",
+              credentials: "same-origin",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({ apiKey }),
+            });
+            const payload = await response.json().catch(() => ({}));
+            if (!response.ok)
+              throw new Error(payload.error || `HTTP ${response.status}`);
+            form.reset();
+            state.providerAuthError = "";
+            await loadProviderAuthStatus();
           } catch (error) {
             state.providerAuthError = getErrorMessage(error);
             render("subscriptions");
@@ -5199,6 +5225,10 @@
             }
             if (event.target.matches("[data-codex-callback-form]")) {
               void submitCodexOAuthCallback(event);
+              return;
+            }
+            if (event.target.matches("[data-anthropic-form]")) {
+              void saveAnthropicKey(event);
               return;
             }
             if (event.target.matches("[data-opencode-go-form]")) {
