@@ -30,6 +30,43 @@ export interface ContextManagementConfig {
   responses?: boolean
 }
 
+export interface RouterRule {
+  /** JavaScript regular expression source matched against the prompt text. */
+  match: string
+  /** Model id returned on a match, optionally a `provider/model` alias. */
+  model: string
+  /** Regular expression flags; defaults to "i". */
+  flags?: string
+}
+
+export type RouterStrategy = "auto" | "rules" | "heuristic"
+
+export interface RouterModelHint {
+  /** Higher is more capable; lower is faster/cheaper. 0-100. */
+  power?: number
+  vision?: boolean
+  code?: boolean
+  reasoning?: boolean
+  safety?: boolean
+  /** Relative cost, 0 (cheap) to 100 (expensive). */
+  cost?: number
+}
+
+export interface RouterConfig {
+  enabled?: boolean
+  /** Model id clients send to trigger routing. Defaults to "auto". */
+  alias?: string
+  /** Candidate model ids the router may choose from. */
+  pool?: Array<string>
+  strategy?: RouterStrategy
+  /** Ordered rules evaluated before the heuristic in "auto" mode. */
+  rules?: Array<RouterRule>
+  /** Fallback when no rule matches and the heuristic cannot decide. */
+  defaultModel?: string
+  /** Per-model heuristic hints, keyed by model id. */
+  modelHints?: Record<string, RouterModelHint>
+}
+
 export interface UpstreamTransportConfig {
   headersTimeoutMs?: number
   streamInactivityTimeoutMs?: number
@@ -156,6 +193,8 @@ export interface AppConfig {
   claudeTokenMultiplier?: number
   // Days of token_usage_events to keep. Unset means keep every row.
   tokenUsageRetentionDays?: number
+  // Prompt-aware model selection for the configured alias. Disabled by default.
+  router?: RouterConfig
   // Postgres/pgvector working state. Absent means the built-in defaults.
   state?: {
     enabled?: boolean

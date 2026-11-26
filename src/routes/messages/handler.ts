@@ -14,6 +14,7 @@ import { createHandlerLogger, debugJson } from "~/lib/logger"
 import { fromClaudeDiscoveryModelId } from "~/lib/catalog/claude-models"
 import { findEndpointModel } from "~/lib/catalog/models"
 import { resolveConfiguredProviderModelAlias } from "~/lib/providers/provider-resolver"
+import { resolveRoutedModel } from "~/lib/router-runtime"
 import { state } from "~/lib/state"
 import { requestContext } from "~/lib/http/request-context"
 import type { SubagentMarker } from "~/lib/http/subagent"
@@ -86,7 +87,9 @@ export async function handleCompletionPayload(
 ) {
   const requestedModel = anthropicPayload.model
   if (!dispatchOptions.skipModelMapping) {
-    anthropicPayload.model = resolveMappedModel(anthropicPayload.model)
+    anthropicPayload.model = resolveMappedModel(
+      resolveRoutedModel(anthropicPayload.model, anthropicPayload),
+    )
   }
   if (anthropicPayload.model !== requestedModel) {
     consola.debug(
@@ -110,8 +113,8 @@ export async function handleCompletionPayload(
   const claudeAutoModel = getClaudeAutoModel(true)
   const shouldUseClaudeAutoModel = Boolean(
     !dispatchOptions.skipClaudeAutoModel
-      && claudeAutoModel
-      && isClaudeAutoModelRequest(anthropicPayload),
+    && claudeAutoModel
+    && isClaudeAutoModelRequest(anthropicPayload),
   )
   if (claudeAutoModel && shouldUseClaudeAutoModel) {
     const resolvedClaudeAutoModel =

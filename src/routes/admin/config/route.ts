@@ -4,6 +4,10 @@ import { z } from "zod"
 import { forwardError } from "~/lib/http/error"
 import { getModelMappings, setModelMappings } from "~/lib/config"
 import { reloadServerConfig } from "~/lib/config/config-reload"
+import {
+  parseRouterConfig,
+  RouterConfigError,
+} from "~/lib/config/router-config"
 import { PATHS } from "~/lib/storage/paths"
 import { providerAdminRoutes } from "~/routes/admin/config/providers"
 import {
@@ -59,6 +63,40 @@ configRoutes.post("/model-mappings", async (c) => {
       modelMappings: updatedModelMappings,
     })
   } catch (error) {
+    return await forwardError(c, error)
+  }
+})
+
+configRoutes.get("/router", async (c) => {
+  try {
+    return c.json({
+      configPath: PATHS.CONFIG_PATH,
+      router: readEditableConfigFromDisk().router ?? {},
+    })
+  } catch (error) {
+    return await forwardError(c, error)
+  }
+})
+
+configRoutes.post("/router", async (c) => {
+  try {
+    const router = parseRouterConfig(await c.req.json())
+    const config = readEditableConfigFromDisk()
+    writeConfigToDisk({ ...config, router })
+    await reloadServerConfig()
+    return c.json({ configPath: PATHS.CONFIG_PATH, router })
+  } catch (error) {
+    if (error instanceof RouterConfigError) {
+      return c.json(
+        {
+          error: {
+            message: error.message,
+            type: "invalid_request_error",
+          },
+        },
+        400,
+      )
+    }
     return await forwardError(c, error)
   }
 })

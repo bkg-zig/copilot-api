@@ -6,6 +6,7 @@ import { streamSSE, type SSEMessage } from "hono/streaming"
 import { guardChatCompletionsStream } from "~/lib/http/chat-completions-stream"
 import { resolveMappedModel } from "~/lib/config"
 import { recordChatCompletionFirstToken } from "~/lib/http/first-token"
+import { resolveRoutedModel } from "~/lib/router-runtime"
 import { createHandlerLogger, debugJson } from "~/lib/logger"
 import { findEndpointModel } from "~/lib/catalog/models"
 import { writeSSEIfConnected } from "~/lib/http/sse"
@@ -35,7 +36,7 @@ export async function handleCompletion(c: Context) {
   let payload = await c.req.json<ChatCompletionsPayload>()
   setPluginRequestModel(payload.model)
   const requestedModel = payload.model
-  payload.model = resolveMappedModel(payload.model)
+  payload.model = resolveMappedModel(resolveRoutedModel(payload.model, payload))
   if (payload.model !== requestedModel) {
     consola.debug(
       `Resolved model mapping: ${requestedModel} -> ${payload.model}`,
