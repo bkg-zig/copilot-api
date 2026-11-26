@@ -1641,6 +1641,13 @@
           adminFreeCatalogLoading: false,
           adminFreeCatalogError: "",
           adminPasswordResetDone: false,
+          adminApiKeys: null,
+          adminApiKeysLoading: false,
+          adminApiKeysError: "",
+          adminApiKeyDraft: createAdminApiKeyDraft(),
+          adminApiKeyPreviewSignature: "",
+          adminApiKeyFormError: "",
+          adminApiKeyCreated: false,
         };
 
         // --- Rendering Logic ---
@@ -2691,6 +2698,9 @@
               !state.adminLoading
             ) {
               void loadAdminProviders();
+            }
+            if (!state.adminApiKeys && !state.adminApiKeysLoading) {
+              void loadAdminApiKeys();
             }
           }
           if (
@@ -4382,6 +4392,13 @@
           state.adminFeedback = "";
           state.adminError = "";
           state.adminPasswordResetDone = false;
+          state.adminApiKeys = null;
+          state.adminApiKeysLoading = false;
+          state.adminApiKeysError = "";
+          state.adminApiKeyDraft = createAdminApiKeyDraft();
+          state.adminApiKeyPreviewSignature = "";
+          state.adminApiKeyFormError = "";
+          state.adminApiKeyCreated = false;
         }
         stateAdminInit();
 
@@ -4416,12 +4433,337 @@
           return payload;
         }
 
+        const ADMIN_KEY_PATTERN_PRESETS = [
+          "bkg-api/*",
+          "google-ai-studio/*",
+          "anthropic/*",
+        ];
+        const ADMIN_KEY_QUOTA_PERIODS = [
+          ["day", "pro Tag"],
+          ["month", "pro Monat"],
+          ["lifetime", "gesamte Laufzeit"],
+        ];
+
+        function createAdminApiKeyDraft() {
+          return {
+            editingId: null,
+            name: "",
+            key: "",
+            enabled: true,
+            expiresAt: "",
+            allowedModels: "",
+            quotaPeriod: "",
+            quotaAmount: "",
+          };
+        }
+
+        function parseAdminApiKeyPatterns(text) {
+          const patterns = [];
+          for (const line of String(text || "").split(/\r?\n/)) {
+            for (const candidate of line.split(",")) {
+              const pattern = candidate.trim();
+              if (pattern && !patterns.includes(pattern)) patterns.push(pattern);
+            }
+          }
+          return patterns;
+        }
+
+        function validateAdminApiKeyPatterns(patterns) {
+          for (const pattern of patterns) {
+            if (/\s/.test(pattern)) {
+              return `Pattern „${pattern}“ enthält Leerzeichen.`;
+            }
+            if (pattern.length > 128) {
+              return "Ein Modell-Pattern ist länger als 128 Zeichen.";
+            }
+          }
+          return "";
+        }
+
+        function formatAdminKeyAmount(value) {
+          const amount = Number(value);
+          if (!Number.isFinite(amount)) return "–";
+          return amount.toLocaleString("de-DE", { maximumFractionDigits: 6 });
+        }
+
+        function formatAdminKeyDate(value) {
+          if (!value) return "–";
+          const date = new Date(value);
+          return Number.isFinite(date.getTime())
+            ? date.toLocaleString("de-DE")
+            : "–";
+        }
+
+        function toAdminApiKeyInputDate(value) {
+          if (!value) return "";
+          const date = new Date(value);
+          if (!Number.isFinite(date.getTime())) return "";
+          const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
+          return local.toISOString().slice(0, 16);
+        }
+
+        function toAdminApiKeyIsoDate(value) {
+          if (!value) return null;
+          const date = new Date(value);
+          return Number.isFinite(date.getTime()) ? date.toISOString() : "";
+        }
+
+        function getAdminApiKeyById(id) {
+          return (state.adminApiKeys || []).find((item) => item.id === id) || null;
+        }
+
+        function getAdminKeyCatalogPatterns() {
+          if (!Array.isArray(state.models)) return [];
+          const patterns = new Set();
+          for (const model of state.models) {
+            const id = typeof model?.id === "string" ? model.id : "";
+            const separator = id.indexOf("/");
+            if (separator > 0) patterns.add(id.slice(0, separator) + "/*");
+          }
+          return [...patterns]
+            .filter((pattern) => !ADMIN_KEY_PATTERN_PRESETS.includes(pattern))
+            .slice(0, 8);
+        }
+
+        function renderAdminKeyChips(patterns, emptyLabel) {
+          if (!patterns.length) {
+            return `<span class="admin-key-chip unrestricted">${escapeHtml(emptyLabel || "Alle Modelle erlauben")}</span>`;
+          }
+          return patterns
+            .map(
+              (pattern) =>
+                `<span class="admin-key-chip">${escapeHtml(pattern)}</span>`,
+            )
+            .join("");
+        }
+
+        function renderAdminKeyPreviewContent(text) {
+          const patterns = parseAdminApiKeyPatterns(text);
+          const error = validateAdminApiKeyPatterns(patterns);
+          const label = patterns.length
+            ? `${patterns.length} Freigabe(n) zum Speichern:`
+            : "Keine Einschränkung – alle Modelle erlaubt.";
+          return `<span class="admin-key-preview-label">${escapeHtml(label)}</span><div class="admin-key-chip-row">${renderAdminKeyChips(patterns, "")}</div>${error ? `<span class="admin-key-preview-error" role="alert">${escapeHtml(error)}</span>` : ""}`;
+        }
+
+        function syncAdminKeyDraftFromForm(form) {
+          if (!(form instanceof HTMLFormElement)) return;
+          const data = new FormData(form);
+          state.adminApiKeyDraft = {
+            ...state.adminApiKeyDraft,
+            name: String(data.get("name") || "").trim(),
+            key: String(data.get("key") || ""),
+            enabled: data.get("enabled") === "on",
+            expiresAt: String(data.get("expiresAt") || ""),
+            allowedModels: String(data.get("allowedModels") || ""),
+            quotaPeriod: String(data.get("quotaPeriod") || ""),
+            quotaAmount: String(data.get("quotaAmount") || "").trim(),
+          };
+        }
+
+        function syncAdminKeyDraftInput(input) {
+          const form = input.closest("form");
+          if (!(input instanceof HTMLElement) || !(form instanceof HTMLFormElement)) return;
+          const name = input.getAttribute("name");
+          if (!name || !(name in state.adminApiKeyDraft)) return;
+          if (input instanceof HTMLInputElement && input.type === "checkbox") {
+            state.adminApiKeyDraft[name] = input.checked;
+          } else {
+            state.adminApiKeyDraft[name] = input.value;
+          }
+        }
+
+        function getAdminKeyPatternSignature(text) {
+          return parseAdminApiKeyPatterns(text).join("\n");
+        }
+
+        function updateAdminKeyPreview(root) {
+          const signature = getAdminKeyPatternSignature(
+            state.adminApiKeyDraft.allowedModels,
+          );
+          if (signature === state.adminApiKeyPreviewSignature) return;
+          state.adminApiKeyPreviewSignature = signature;
+          const scope = root instanceof Element ? root : document;
+          const preview = scope.querySelector("[data-admin-key-preview]");
+          if (preview instanceof HTMLElement) {
+            preview.innerHTML = renderAdminKeyPreviewContent(
+              state.adminApiKeyDraft.allowedModels,
+            );
+          }
+          const patterns = new Set(signature ? signature.split("\n") : []);
+          for (const button of scope.querySelectorAll("[data-admin-key-pattern]")) {
+            const pressed = String(
+              patterns.has(button.getAttribute("data-admin-key-pattern")),
+            );
+            if (button.getAttribute("aria-pressed") !== pressed) {
+              button.setAttribute("aria-pressed", pressed);
+            }
+          }
+          const clearButton = scope.querySelector("[data-admin-key-pattern-clear]");
+          if (clearButton) {
+            const pressed = String(patterns.size === 0);
+            if (clearButton.getAttribute("aria-pressed") !== pressed) {
+              clearButton.setAttribute("aria-pressed", pressed);
+            }
+          }
+        }
+
+        function setAdminKeyPatterns(patterns) {
+          state.adminApiKeyDraft.allowedModels = patterns.join("\n");
+          const textarea = document.querySelector("[data-admin-key-patterns]");
+          if (textarea instanceof HTMLTextAreaElement) {
+            if (textarea.value !== state.adminApiKeyDraft.allowedModels) {
+              textarea.value = state.adminApiKeyDraft.allowedModels;
+            }
+            updateAdminKeyPreview(textarea.closest(".admin-api-keys"));
+            return;
+          }
+          updateAdminKeyPreview();
+        }
+
+        function toggleAdminKeyPattern(pattern) {
+          if (!pattern) return;
+          const patterns = parseAdminApiKeyPatterns(
+            state.adminApiKeyDraft.allowedModels,
+          );
+          const index = patterns.indexOf(pattern);
+          if (index >= 0) patterns.splice(index, 1);
+          else patterns.push(pattern);
+          setAdminKeyPatterns(patterns);
+        }
+
+        function buildAdminApiKeyBody(draft, editing) {
+          const patterns = parseAdminApiKeyPatterns(draft.allowedModels);
+          const patternError = validateAdminApiKeyPatterns(patterns);
+          if (patternError) return { error: patternError };
+          const expiresAt = toAdminApiKeyIsoDate(draft.expiresAt);
+          if (expiresAt === "") return { error: "Das Ablaufdatum ist ungültig." };
+          const hasPeriod = Boolean(draft.quotaPeriod);
+          const hasAmount = draft.quotaAmount !== "";
+          if (hasPeriod !== hasAmount) {
+            return { error: "Für die Quota sind Periode und Betrag erforderlich." };
+          }
+          let quota = null;
+          if (hasPeriod) {
+            if (!ADMIN_KEY_QUOTA_PERIODS.some((item) => item[0] === draft.quotaPeriod)) {
+              return { error: "Die Quota-Periode ist ungültig." };
+            }
+            const amount = Number(draft.quotaAmount);
+            if (!Number.isFinite(amount) || amount < 0) {
+              return { error: "Der Quota-Betrag muss eine nicht negative Zahl sein." };
+            }
+            quota = { period: draft.quotaPeriod, amount };
+          }
+          const body = {};
+          if (draft.name.trim()) body.name = draft.name.trim();
+          body.enabled = Boolean(draft.enabled);
+          if (editing) {
+            body.expiresAt = expiresAt;
+            body.allowedModels = patterns.length ? patterns : null;
+            body.quota = quota;
+          } else {
+            if (expiresAt) body.expiresAt = expiresAt;
+            if (patterns.length) body.allowedModels = patterns;
+            if (quota) body.quota = quota;
+            const key = draft.key.trim();
+            if (key) body.key = key;
+          }
+          return { body };
+        }
+
         function getAdminProvider() {
           return (
             (state.adminProviders || []).find(
               (provider) => provider.name === state.adminSelectedProvider,
             ) || null
           );
+        }
+
+        function renderAdminApiKeyForm() {
+          const draft = state.adminApiKeyDraft;
+          const editing = Boolean(draft.editingId);
+          const patterns = parseAdminApiKeyPatterns(draft.allowedModels);
+          state.adminApiKeyPreviewSignature = patterns.join("\n");
+          const quickPatterns = [
+            ...ADMIN_KEY_PATTERN_PRESETS,
+            ...getAdminKeyCatalogPatterns(),
+          ];
+          const quickButtons = quickPatterns
+            .map(
+              (pattern) =>
+                `<button type="button" class="models-action admin-key-pattern" data-admin-key-pattern="${escapeHtml(pattern)}" aria-pressed="${patterns.includes(pattern)}">${escapeHtml(pattern)}</button>`,
+            )
+            .join("");
+          const quotaOptions = ADMIN_KEY_QUOTA_PERIODS.map(
+            ([value, label]) =>
+              `<option value="${value}" ${draft.quotaPeriod === value ? "selected" : ""}>${label}</option>`,
+          ).join("");
+          return `
+            <form data-admin-api-key-form class="admin-form admin-key-form" aria-label="Client-API-Key Formular">
+              <div class="admin-panel-heading">
+                <div><h4>${editing ? "Key bearbeiten" : "Neuen Client-API-Key anlegen"}</h4><p class="admin-note">${editing ? `ID: ${escapeHtml(draft.editingId)}` : "Leer lassen = Gateway generiert den Key."}</p></div>
+                ${editing ? '<button type="button" class="secondary-action" data-admin-key-cancel>Abbrechen</button>' : ""}
+              </div>
+              ${state.adminApiKeyFormError ? `<p class="admin-error" role="alert">${escapeHtml(state.adminApiKeyFormError)}</p>` : ""}
+              <div class="admin-key-form-grid">
+                <label class="admin-field admin-key-field"><span>Name (optional)</span><input class="input-control" data-admin-key-input name="name" type="text" maxlength="128" value="${escapeHtml(draft.name)}" placeholder="z. B. OpenCode Client"></label>
+                ${editing ? "" : '<label class="admin-field admin-key-field"><span>Eigener Key (optional)</span><input class="input-control" data-admin-key-input name="key" type="password" autocomplete="off" placeholder="Leer lassen = automatisch generieren"></label>'}
+                <label class="admin-field admin-key-field"><span>Ablaufdatum</span><input class="input-control" data-admin-key-input name="expiresAt" type="datetime-local" value="${escapeHtml(draft.expiresAt)}"></label>
+                <label class="admin-field admin-key-field"><span>Quota</span><select class="select-control" data-admin-key-input name="quotaPeriod"><option value="" ${draft.quotaPeriod === "" ? "selected" : ""}>Kein Limit</option>${quotaOptions}</select></label>
+                <label class="admin-field admin-key-field"><span>Quota-Betrag</span><input class="input-control" data-admin-key-input name="quotaAmount" type="number" min="0" step="any" value="${escapeHtml(draft.quotaAmount)}" placeholder="z. B. 10"></label>
+                <label class="admin-check admin-key-enabled"><input data-admin-key-input type="checkbox" name="enabled" ${draft.enabled ? "checked" : ""}> Aktiv</label>
+                <label class="admin-field admin-key-field admin-key-field-wide"><span>Erlaubte Modelle</span><textarea class="admin-key-textarea" data-admin-key-input data-admin-key-patterns name="allowedModels" rows="3" placeholder="bkg-api/*&#10;google-ai-studio/*">${escapeHtml(draft.allowedModels)}</textarea><small class="admin-note">Ein Pattern pro Zeile, Kommas und Leerzeilen sind erlaubt. Leer = alle Modelle.</small></label>
+                <div class="admin-key-field-wide">
+                  <div class="admin-note admin-key-quick-label">Schnellauswahl</div>
+                  <div class="admin-key-chip-row admin-key-quick">${quickButtons}<button type="button" class="models-action admin-key-pattern admin-key-pattern-clear" data-admin-key-pattern-clear aria-pressed="${patterns.length === 0}">Alle Modelle erlauben</button></div>
+                  <div class="admin-key-preview" data-admin-key-preview role="status">${renderAdminKeyPreviewContent(draft.allowedModels)}</div>
+                </div>
+              </div>
+              <div class="admin-key-actions"><button class="primary-action" type="submit">${editing ? "Änderungen speichern" : "Key anlegen"}</button></div>
+            </form>`;
+        }
+
+        function renderClientApiKeysSection() {
+          let listHtml = "";
+          if (state.adminApiKeysError) {
+            listHtml = `<p class="admin-error" role="alert">${escapeHtml(state.adminApiKeysError)}</p>`;
+          } else if (state.adminApiKeysLoading) {
+            listHtml = '<p class="admin-note" role="status">Lade Client-API-Keys …</p>';
+          } else if (!Array.isArray(state.adminApiKeys) || state.adminApiKeys.length === 0) {
+            listHtml = '<p class="admin-note">Noch keine Client-API-Keys vorhanden. Lege unten den ersten Key an.</p>';
+          } else {
+            const rows = state.adminApiKeys
+              .map((item) => {
+                const id = String(item.id || "");
+                const quota = item.quota
+                  ? `${formatAdminKeyAmount(item.quota.amount)} · ${escapeHtml(String(item.quota.period || "–"))}`
+                  : "Keine";
+                const usage = item.usage || {};
+                const remaining =
+                  usage.remainingAmount === null || usage.remainingAmount === undefined
+                    ? "unbegrenzt"
+                    : formatAdminKeyAmount(usage.remainingAmount);
+                return `<tr>
+                  <td data-label="Name"><strong>${escapeHtml(item.name || "Ohne Name")}</strong><small>ID: ${escapeHtml(id)}</small></td>
+                  <td data-label="Key"><code>${escapeHtml(item.keyHint || "–")}</code></td>
+                  <td data-label="Status"><span class="admin-key-chip ${item.enabled ? "active" : "inactive"}">${item.enabled ? "aktiv" : "inaktiv"}</span></td>
+                  <td data-label="Ablauf">${escapeHtml(formatAdminKeyDate(item.expiresAt))}</td>
+                  <td data-label="Freigaben"><div class="admin-key-chip-row">${renderAdminKeyChips(Array.isArray(item.allowedModels) ? item.allowedModels : [], "Alle Modelle")}</div></td>
+                  <td data-label="Quota">${quota}</td>
+                  <td data-label="Usage"><small>Verwendet: ${escapeHtml(formatAdminKeyAmount(usage.usedAmount))}</small><small>Verbleibend: ${escapeHtml(remaining)}</small><small>Reset: ${escapeHtml(formatAdminKeyDate(usage.resetsAt))}</small></td>
+                  <td data-label="Aktionen"><div class="admin-key-actions"><button type="button" class="models-action" data-admin-key-edit="${escapeHtml(id)}">Bearbeiten</button><button type="button" class="danger-action" data-admin-key-delete="${escapeHtml(id)}">Löschen</button></div></td>
+                </tr>`;
+              })
+              .join("");
+            listHtml = `<div class="admin-key-table-wrap"><table class="data-table admin-key-table"><thead><tr><th>Name</th><th>Key</th><th>Status</th><th>Ablauf</th><th>Freigaben</th><th>Quota</th><th>Usage</th><th>Aktionen</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+          }
+          return `
+            <section class="admin-panel admin-api-keys" data-admin-api-keys>
+              <div class="admin-panel-heading"><div><h3>Client-API-Keys</h3><p class="admin-note">Keys, Freigaben, Quoten und Usage im Browser verwalten.</p></div><button type="button" class="secondary-action" data-admin-api-keys-refresh>Keys neu laden</button></div>
+              ${state.adminApiKeyCreated ? `<div class="admin-key-created" data-admin-key-created role="status"><strong>Neuer Client-API-Key</strong><code class="admin-key-value" data-admin-key-created-value></code><p class="admin-note">Dieser Klartext-Key wird nur einmal angezeigt und danach nicht im Browser gespeichert. Kopiere ihn jetzt.</p><button type="button" class="secondary-action" data-admin-key-dismiss>Hinweis schließen</button></div>` : ""}
+              ${listHtml}
+              ${renderAdminApiKeyForm()}
+            </section>`;
         }
 
         function renderAdminSection() {
@@ -4681,6 +5023,8 @@
           }
           html += "</section></div>";
 
+          html += renderClientApiKeysSection();
+
           html += '<section class="admin-panel admin-password-reset"><div class="admin-panel-heading"><div><h3>Passwort zurücksetzen</h3>';
           html += "<p>Mit dem Admin-API-Key ein neues Passwort setzen. Alle Sitzungen werden beendet.</p></div></div>";
           if (state.adminPasswordResetDone) {
@@ -4747,6 +5091,122 @@
             state.adminFreeCatalogError = getErrorMessage(error);
           } finally {
             state.adminFreeCatalogLoading = false;
+            render("admin");
+          }
+        }
+
+        async function loadAdminApiKeys() {
+          state.adminApiKeysLoading = true;
+          state.adminApiKeysError = "";
+          render("admin");
+          try {
+            const result = await adminRequest("/admin/api-keys");
+            state.adminApiKeys = Array.isArray(result.keys) ? result.keys : [];
+          } catch (error) {
+            state.adminApiKeys = null;
+            state.adminApiKeysError = redactAdminKeyError(error, []);
+          } finally {
+            state.adminApiKeysLoading = false;
+            render("admin");
+          }
+        }
+
+        function redactAdminKeyError(error, secrets) {
+          let message = getErrorMessage(error);
+          for (const secret of secrets) {
+            const value = typeof secret === "string" ? secret.trim() : "";
+            if (value) message = message.split(value).join("[redacted]");
+          }
+          return message;
+        }
+
+        function startAdminApiKeyEdit(id) {
+          const key = getAdminApiKeyById(id);
+          if (!key) return;
+          state.adminApiKeyDraft = {
+            editingId: String(key.id),
+            name: typeof key.name === "string" ? key.name : "",
+            key: "",
+            enabled: Boolean(key.enabled),
+            expiresAt: toAdminApiKeyInputDate(key.expiresAt),
+            allowedModels: Array.isArray(key.allowedModels)
+              ? key.allowedModels.join("\n")
+              : "",
+            quotaPeriod: key.quota?.period || "",
+            quotaAmount:
+              key.quota?.amount === null || key.quota?.amount === undefined
+                ? ""
+                : String(key.quota.amount),
+          };
+          state.adminApiKeyFormError = "";
+          state.adminApiKeyCreated = false;
+          render("admin");
+          const form = document.querySelector("[data-admin-api-key-form]");
+          if (form instanceof HTMLElement) {
+            form.scrollIntoView({ behavior: "smooth", block: "start" });
+          }
+        }
+
+        async function submitAdminApiKeyForm(form) {
+          syncAdminKeyDraftFromForm(form);
+          const draft = { ...state.adminApiKeyDraft };
+          const editing = Boolean(draft.editingId);
+          const built = buildAdminApiKeyBody(draft, editing);
+          if (built.error) {
+            state.adminApiKeyFormError = built.error;
+            render("admin");
+            return;
+          }
+          const submitButton = form.querySelector('button[type="submit"]');
+          if (submitButton instanceof HTMLButtonElement) submitButton.disabled = true;
+          try {
+            const result = await adminRequest(
+              editing
+                ? "/admin/api-keys/" + encodeURIComponent(draft.editingId)
+                : "/admin/api-keys",
+              { method: editing ? "PATCH" : "POST", body: built.body },
+            );
+            state.adminApiKeyDraft = createAdminApiKeyDraft();
+            state.adminApiKeyFormError = "";
+            state.adminFeedback = editing
+              ? "Client-API-Key aktualisiert."
+              : "Client-API-Key angelegt.";
+            state.adminApiKeyCreated = !editing;
+            await loadAdminApiKeys();
+            if (!editing && typeof result?.key === "string") {
+              const target = document.querySelector(
+                "[data-admin-key-created-value]",
+              );
+              if (target instanceof HTMLElement) target.textContent = result.key;
+            }
+          } catch (error) {
+            state.adminApiKeyFormError = redactAdminKeyError(error, [draft.key]);
+            state.adminFeedback = "";
+            render("admin");
+          }
+        }
+
+        async function deleteAdminApiKey(id) {
+          const key = getAdminApiKeyById(id);
+          const label = key ? `${key.name || "Ohne Name"} (${id})` : id;
+          if (
+            !window.confirm(
+              `Client-API-Key ${label} löschen? Der Zugang ist danach sofort ungültig.`,
+            )
+          )
+            return;
+          try {
+            await adminRequest("/admin/api-keys/" + encodeURIComponent(id), {
+              method: "DELETE",
+            });
+            if (state.adminApiKeyDraft.editingId === id) {
+              state.adminApiKeyDraft = createAdminApiKeyDraft();
+            }
+            state.adminFeedback = `Client-API-Key ${label} gelöscht.`;
+            state.adminApiKeysError = "";
+            await loadAdminApiKeys();
+          } catch (error) {
+            state.adminApiKeysError = redactAdminKeyError(error, []);
             render("admin");
           }
         }
@@ -4848,6 +5308,41 @@
             window.location.replace("/");
             return true;
           }
+          const keysRefresh = event.target.closest("[data-admin-api-keys-refresh]");
+          if (keysRefresh) {
+            await loadAdminApiKeys();
+            return true;
+          }
+          const keyEdit = event.target.closest("[data-admin-key-edit]");
+          if (keyEdit) {
+            startAdminApiKeyEdit(keyEdit.dataset.adminKeyEdit);
+            return true;
+          }
+          const keyDelete = event.target.closest("[data-admin-key-delete]");
+          if (keyDelete) {
+            await deleteAdminApiKey(keyDelete.dataset.adminKeyDelete);
+            return true;
+          }
+          const keyPattern = event.target.closest("[data-admin-key-pattern]");
+          if (keyPattern) {
+            toggleAdminKeyPattern(keyPattern.dataset.adminKeyPattern);
+            return true;
+          }
+          if (event.target.closest("[data-admin-key-pattern-clear]")) {
+            setAdminKeyPatterns([]);
+            return true;
+          }
+          if (event.target.closest("[data-admin-key-cancel]")) {
+            state.adminApiKeyDraft = createAdminApiKeyDraft();
+            state.adminApiKeyFormError = "";
+            render("admin");
+            return true;
+          }
+          if (event.target.closest("[data-admin-key-dismiss]")) {
+            state.adminApiKeyCreated = false;
+            render("admin");
+            return true;
+          }
           const catalogButton = event.target.closest("[data-admin-free-catalog]");
           if (catalogButton) {
             await loadAdminFreeCatalog();
@@ -4922,6 +5417,11 @@
         async function handleAdminFormSubmit(event) {
           const form = event.target;
           if (!(form instanceof HTMLFormElement)) return false;
+          if (form.matches("[data-admin-api-key-form]")) {
+            event.preventDefault();
+            await submitAdminApiKeyForm(form);
+            return true;
+          }
           if (form.matches("[data-admin-add-provider]")) {
             event.preventDefault();
             const formData = new FormData(form);
@@ -5089,7 +5589,7 @@
           }
           if (
             event.target.closest(
-              "[data-admin-reset-login], [data-admin-refresh], [data-admin-free-catalog], [data-admin-catalog-use], [data-admin-select-provider], [data-admin-discover], [data-admin-delete-provider], [data-admin-test-model], [data-admin-toggle-model]",
+              "[data-admin-reset-login], [data-admin-refresh], [data-admin-free-catalog], [data-admin-catalog-use], [data-admin-select-provider], [data-admin-discover], [data-admin-delete-provider], [data-admin-test-model], [data-admin-toggle-model], [data-admin-api-keys-refresh], [data-admin-key-edit], [data-admin-key-delete], [data-admin-key-pattern], [data-admin-key-pattern-clear], [data-admin-key-cancel], [data-admin-key-dismiss]",
             )
           ) {
             void handleAdminContentClick(event);
@@ -5207,6 +5707,13 @@
         }
 
         function handleContentAreaChange(event) {
+          if (
+            event.target instanceof Element &&
+            event.target.closest("[data-admin-api-key-form]")
+          ) {
+            syncAdminKeyDraftInput(event.target);
+            return;
+          }
           if (!(event.target instanceof HTMLSelectElement)) return;
           if (event.target.matches("[data-playground-model]")) {
             state.playgroundModel = event.target.value;
@@ -5291,6 +5798,16 @@
           });
           contentArea.addEventListener("change", handleContentAreaChange);
           contentArea.addEventListener("input", (event) => {
+            if (
+              event.target instanceof Element &&
+              event.target.matches("[data-admin-key-input]")
+            ) {
+              syncAdminKeyDraftInput(event.target);
+              if (event.target.matches("[data-admin-key-patterns]")) {
+                updateAdminKeyPreview(event.target.closest(".admin-api-keys"));
+              }
+              return;
+            }
             if (event.target.matches("[data-playground-prompt]")) {
               state.playgroundDraft = event.target.value;
               return;
@@ -5323,7 +5840,10 @@
 
           if (state.activeTab === "admin") {
             render("admin");
-            if (state.adminConnected) void loadAdminProviders();
+            if (state.adminConnected) {
+              void loadAdminProviders();
+              void loadAdminApiKeys();
+            }
           } else if (
             state.activeTab === "playground" ||
             state.activeTab === "models"
