@@ -164,6 +164,23 @@ export function getProviderConfig(name: string): ResolvedProviderConfig | null {
     return null
   }
 
+  return resolveProviderEntry(providerName, provider)
+}
+
+/**
+ * Resolves a stored provider entry without reading the config file. Keeping the
+ * I/O separate makes the resolution rules testable even when another test
+ * replaces the config barrel with a module mock.
+ */
+export function resolveProviderEntry(
+  name: string,
+  provider: ProviderConfig,
+): ResolvedProviderConfig | null {
+  const providerName = name.trim()
+  if (!providerName || isReservedProviderName(providerName)) {
+    return null
+  }
+
   if (provider.enabled === false) {
     return null
   }

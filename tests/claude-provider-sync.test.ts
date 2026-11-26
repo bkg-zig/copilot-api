@@ -5,9 +5,10 @@ import path from "node:path"
 
 import {
   invalidateConfigCache,
+  readEditableConfigFromDisk,
   setConfigPathOverride,
 } from "~/lib/config/config-store"
-import { getProviderConfig } from "~/lib/config/provider-config"
+import { resolveProviderEntry } from "~/lib/config/provider-config"
 import { syncClaudeProviderConfig } from "~/lib/auth/claude-code/provider"
 
 test("anthropic oauth2 is configured without a stored API key", () => {
@@ -27,13 +28,23 @@ test("anthropic oauth2 is configured without a stored API key", () => {
   )
   setConfigPathOverride(configPath)
   try {
-    expect(getProviderConfig("anthropic")).toMatchObject({
+    const stored = readEditableConfigFromDisk().providers?.anthropic
+    expect(stored).toBeDefined()
+    expect(resolveProviderEntry("anthropic", stored!)).toMatchObject({
       name: "anthropic",
       type: "anthropic",
       authType: "oauth2",
       apiKey: "",
     })
-    expect(getProviderConfig("custom-oauth")).toBeNull()
+    // Die OAuth2-Ausnahme gilt nur für die bekannten Abo-Anbieter; ein
+    // frei benannter Provider braucht weiterhin einen gespeicherten Key.
+    expect(
+      resolveProviderEntry("custom-oauth", {
+        type: "anthropic",
+        authType: "oauth2",
+        baseUrl: "https://api.anthropic.com",
+      }),
+    ).toBeNull()
   } finally {
     setConfigPathOverride(null)
   }
