@@ -3,12 +3,12 @@ import type { ProviderConfig } from "~/lib/types/config"
 export const ANTHROPIC_BASE_URL = "https://api.anthropic.com"
 
 export type AnthropicKeyCheck =
-  | { ok: true; apiKey: string }
-  | { ok: false; error: string }
+  { ok: true; apiKey: string } | { ok: false; error: string }
 
 /**
  * Accepts official Claude API keys only. Claude subscription (OAuth) tokens are
- * restricted to Anthropic's own products and must not be routed through a gateway.
+ * not console keys; they are obtained through the gateway's own sign-in flow
+ * (`POST /auth/providers/anthropic/start`) and must not be pasted as API key.
  */
 export function checkAnthropicApiKey(value: unknown): AnthropicKeyCheck {
   const apiKey = typeof value === "string" ? value.trim() : ""
