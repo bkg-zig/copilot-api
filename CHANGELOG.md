@@ -93,10 +93,12 @@ stehen in `PROGRESS.md` und `OFFENHEAD.md`.
   git-ignorierten Secret berechnete Bootstrap-Hash wurde genau 1× gefunden.
 - `708c3045` — Der zurückgegebene Klartextkey wird nur flüchtig im DOM der
   Einmalanzeige gezeigt, nicht im State, Browser-Speicher, Cookie, URL oder in
-  Attributen. 27/27 Headless-Chrome-Prüfungen mit gemocktem `fetch` ohne
-  `pageerror` und `console.error`; der HTTP-Vertrag wurde zusätzlich gegen
-  einen echten Gateway geprüft. Ein Browsercheck gegen die Produktivinstanz
-  blieb aus (siehe `OFFENHEAD.md`).
+  Attributen. 27/27 Headless-Chrome-Prüfungen mit gemocktem `fetch` sowie ein
+  echter Headless-Chrome-Lauf gegen Gateway und Postgres: Anlegen, einmalige
+  Klartextanzeige, Freigabewechsel mit Filterwirkung auf `/models` und Löschung
+  ohne `pageerror` oder relevante `console.error`; kein Secret im Browser-
+  Storage. Ein Browsercheck gegen die Produktivinstanz blieb aus (siehe
+  `OFFENHEAD.md`).
 - `dd366e54` — Der pgrust-Container läuft ohne Host-Port mit
   `no-new-privileges:true` und reduzierten Capabilities (`cap_drop: [ALL]` plus
   `CHOWN`, `DAC_OVERRIDE`, `FOWNER`, `SETUID`, `SETGID`).

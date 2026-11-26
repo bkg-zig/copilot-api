@@ -47,11 +47,13 @@ Prüfungen und ihre Werte stehen in `PROGRESS.md`.
   Datenbanken oder Bestandsdaten ist damit nichts verifiziert. `read_only`
   bleibt beim Postgres-Container bewusst aus, weil der Image-EntryPoint beim
   Init Zertifikat und Rollen-SQL schreibt.
-- **Browserprüfung.** Die Anthropic-Karte und die Client-Key-Verwaltung wurden
-  mit Headless Chrome gegen lokale Mocks geprüft (zuletzt 27/27 Checks,
-  0 `pageerror`, 0 `console.error`). Der HTTP-Vertrag der Key-Verwaltung wurde
-  zusätzlich gegen einen echten lokalen Gateway geprüft. Ein erneuter
-  Browsercheck der Oberfläche gegen die produktive Instanz blieb aus.
+- **Browserprüfung.** Die Anthropic-Karte wurde mit Headless Chrome gegen einen
+  lokalen Mock geprüft. Die Client-Key-Verwaltung wurde neben 27/27 Checks mit
+  gemocktem `fetch` zusätzlich in einem echten Headless-Chrome-Lauf gegen einen
+  echten Gateway mit echter Postgres geprüft: Einmalanzeige des Klartextkeys,
+  Freigabewechsel mit Wirkung auf `/models`, Löschung, 0 `pageerrors`, keine
+  relevanten `console.error`, kein Secret im Browser-Storage. Ein Browsercheck
+  gegen die produktive Instanz blieb aus.
 - **Produktivauslieferung.** Das Image `bkg-copilot-api:local` wurde neu
   gebaut, der Gateway-Container kontrolliert neu erstellt und `GET /` mit 200
   geprüft; `/v1/models` mit echtem Client-Key und `/admin/api-keys` mit
