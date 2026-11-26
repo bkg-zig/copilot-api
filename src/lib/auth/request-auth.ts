@@ -1,17 +1,24 @@
+import consola from "consola"
 import type { Context, MiddlewareHandler } from "hono"
 
 import { getConfig } from "../config"
 import {
+  hashGatewayApiKey,
   isApiKeyActive,
   normalizeApiKeyRecords,
   normalizeApiKeys,
+  type GatewayApiKeyConfig,
 } from "../config/api-key-config"
 import { requestContext } from "../http/request-context"
+import { gatewayApiKeyStore } from "./gateway-api-keys"
 
 export { normalizeApiKeys }
 
 interface AuthMiddlewareOptions {
   getApiKeys?: () => Array<string>
+  getGatewayApiKeys?:
+    | (() => Promise<Array<GatewayApiKeyConfig>>)
+    | (() => Array<GatewayApiKeyConfig>)
   allowUnauthenticatedPaths?: Array<string>
   allowOptionsBypass?: boolean
   allowWhenNoApiKeys?: boolean
@@ -19,16 +26,27 @@ interface AuthMiddlewareOptions {
   authorizeRequest?: (c: Context) => Promise<boolean> | boolean
 }
 
+/**
+ * Legacy config reader. Secrets that live only in Postgres are deliberately
+ * absent: callers compare/add literal keys, and a masked hint would be neither
+ * usable nor safe to print. Use getConfiguredApiKeyCount() for existence checks.
+ */
 export function getConfiguredApiKeys(): Array<string> {
   const config = getConfig()
-  return normalizeApiKeyRecords(config.auth?.apiKeyConfigs).map(
-    (entry) => entry.key,
+  return normalizeApiKeyRecords(config.auth?.apiKeyConfigs).flatMap((entry) =>
+    entry.key ? [entry.key] : [],
   )
 }
 
+export function getConfiguredApiKeyCount(): number {
+  const databaseIdentities = gatewayApiKeyStore
+    .peek()
+    .map((entry) => entry.keyHash ?? entry.keyHint ?? entry.id)
+  return new Set([...getConfiguredApiKeys(), ...databaseIdentities]).size
+}
+
 export function getMissingApiKeysMessage(): string | null {
-  const apiKeys = getConfiguredApiKeys()
-  if (apiKeys.length > 0) {
+  if (getConfiguredApiKeyCount() > 0) {
     return null
   }
 
@@ -36,6 +54,25 @@ export function getMissingApiKeysMessage(): string | null {
     "Requests currently bypass authentication.",
     "Run `npx @jeffreycao/copilot-api@latest auth keys --add <key>` to enable API key auth.",
   ].join(" ")
+}
+
+/** Loads the Postgres-backed snapshot at startup; absence of Postgres is fine. */
+export async function initializeGatewayApiKeys(): Promise<void> {
+  if (!gatewayApiKeyStore.hasDatabase()) return
+  try {
+    await gatewayApiKeyStore.listKeys()
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    consola.warn(`Gateway API key storage is unavailable: ${message}`)
+  }
+}
+
+export async function getEffectiveGatewayApiKeys(): Promise<
+  Array<GatewayApiKeyConfig>
+> {
+  return gatewayApiKeyStore.hasDatabase() ?
+      await gatewayApiKeyStore.listKeys()
+    : normalizeApiKeyRecords(getConfig().auth?.apiKeyConfigs)
 }
 
 function normalizeApiKey(apiKey: unknown): string | null {
@@ -98,12 +135,32 @@ function createUnauthorizedResponse(c: Context): Response {
   )
 }
 
+function createStorageUnavailableResponse(c: Context): Response {
+  return c.json(
+    {
+      error: {
+        message: "API key storage is unavailable",
+        type: "service_unavailable_error",
+      },
+    },
+    503,
+  )
+}
+
 export function createAuthMiddleware(
   options: AuthMiddlewareOptions = {},
 ): MiddlewareHandler {
-  // The configured-key reader uses managed policies even when passed explicitly.
-  const getApiKeys =
-    options.getApiKeys === getConfiguredApiKeys ? undefined : options.getApiKeys
+  // An explicitly passed config reader keeps the legacy config policy, even
+  // when Postgres is configured. All other callers use the authoritative DB.
+  const explicitConfigReader = options.getApiKeys === getConfiguredApiKeys
+  const getApiKeys = explicitConfigReader ? undefined : options.getApiKeys
+  const readGatewayKeys =
+    options.getGatewayApiKeys ?? (() => gatewayApiKeyStore.listKeys())
+  const useGatewayStore =
+    !getApiKeys
+    && !explicitConfigReader
+    && (options.getGatewayApiKeys !== undefined
+      || gatewayApiKeyStore.hasDatabase())
   const allowUnauthenticatedPaths = options.allowUnauthenticatedPaths ?? ["/"]
   const allowOptionsBypass = options.allowOptionsBypass ?? true
   const allowWhenNoApiKeys = options.allowWhenNoApiKeys ?? true
@@ -123,8 +180,37 @@ export function createAuthMiddleware(
     }
 
     const auth = getApiKeys ? undefined : getConfig().auth
-    const apiKeys =
-      getApiKeys ? getApiKeys() : normalizeApiKeyRecords(auth?.apiKeyConfigs)
+    let apiKeys: Array<string | GatewayApiKeyConfig> = []
+    let lookup: ((hash: string) => GatewayApiKeyConfig | undefined) | undefined
+
+    if (getApiKeys) {
+      apiKeys = getApiKeys()
+    } else if (useGatewayStore) {
+      try {
+        if (options.getGatewayApiKeys === undefined) {
+          await gatewayApiKeyStore.listKeys()
+          lookup = (hash) => gatewayApiKeyStore.lookupByHash(hash)
+          apiKeys = gatewayApiKeyStore.peek()
+        } else {
+          const records = await readGatewayKeys()
+          const byHash = new Map<string, GatewayApiKeyConfig>()
+          for (const record of records) {
+            const hash =
+              record.keyHash
+              ?? (record.key ? hashGatewayApiKey(record.key) : undefined)
+            if (hash) byHash.set(hash, record)
+          }
+          lookup = (hash) => byHash.get(hash)
+          apiKeys = records
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        consola.error(`Gateway API key storage is unavailable: ${message}`)
+        return createStorageUnavailableResponse(c)
+      }
+    } else {
+      apiKeys = normalizeApiKeyRecords(auth?.apiKeyConfigs)
+    }
     if (apiKeys.length === 0) {
       return allowWhenNoApiKeys ? next() : createUnauthorizedResponse(c)
     }
@@ -132,10 +218,16 @@ export function createAuthMiddleware(
     const requestApiKey = extractRequestApiKey(c)
     if (!requestApiKey) return createUnauthorizedResponse(c)
 
-    const key = apiKeys.find((entry) => {
-      if (typeof entry === "string") return entry === requestApiKey
-      return !getApiKeys && entry.key === requestApiKey
-    })
+    let key: string | GatewayApiKeyConfig | undefined
+    if (lookup) {
+      key = lookup(hashGatewayApiKey(requestApiKey))
+    } else {
+      key = apiKeys.find((entry) =>
+        typeof entry === "string" ?
+          entry === requestApiKey
+        : entry.key === requestApiKey,
+      )
+    }
     if (key === undefined) return createUnauthorizedResponse(c)
     if (typeof key === "string") return next()
     if (!isApiKeyActive(key)) return createUnauthorizedResponse(c)

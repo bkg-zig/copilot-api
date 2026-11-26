@@ -1,8 +1,8 @@
+import { createHash } from "node:crypto"
 import fs from "node:fs/promises"
-import path from "node:path"
 
 const appDir = process.env.COPILOT_API_HOME || "/data"
-const configPath = path.join(appDir, "config.json")
+const configPath = `${appDir.replace(/\/+$/u, "")}/config.json`
 const readSecret = async (variable: string): Promise<string> => {
   const file = process.env[variable]
   if (!file) throw new Error(`${variable} is not configured`)
@@ -16,6 +16,19 @@ const [upstreamUrl, upstreamKey, gatewayKey] = await Promise.all([
   readSecret("BKG_API_GLOBAL_KEY_FILE"),
   readSecret("BKG_OV_GATEWAY_KEY_FILE"),
 ])
+// Keep this byte-for-byte identical to hashGatewayApiKey() in
+// src/lib/config/api-key-config.ts. The runtime image has no src/ imports, so
+// the helper is duplicated here deliberately; both produce the same digest.
+function hashGatewayKey(key: string): string {
+  return createHash("sha256")
+    .update("copilot-api:key:v1\0" + key)
+    .digest("hex")
+}
+
+function maskGatewayKey(key: string): string {
+  return key.length >= 8 ? `${key.slice(0, 4)}…${key.slice(-4)}` : "****"
+}
+
 const parsedUrl = new URL(upstreamUrl)
 if (
   parsedUrl.protocol !== "https:"
@@ -40,25 +53,27 @@ try {
   const raw = await fs.readFile(configPath, "utf8")
   if (raw.trim()) config = JSON.parse(raw) as GatewayConfig
 } catch (error) {
-  if (
-    !(
-      error
-      && typeof error === "object"
-      && "code" in error
-      && error.code === "ENOENT"
-    )
-  ) {
+  if (!(
+    error
+    && typeof error === "object"
+    && "code" in error
+    && error.code === "ENOENT"
+  )) {
     throw error
   }
 }
 
+// Bootstrap seed only: the gateway inserts this row with ON CONFLICT DO NOTHING
+// on first start. Existing dashboard values in Postgres always win. The secret
+// is reduced to its hash here and never written to config.json.
 config.auth = {
   ...(config.auth ?? {}),
   apiKeyConfigs: [
     {
       id: "bkg-ov-clients",
       name: "BKG-OV, Claude Code and OpenCode",
-      key: gatewayKey,
+      keyHash: hashGatewayKey(gatewayKey),
+      keyHint: maskGatewayKey(gatewayKey),
       enabled: true,
       allowedModels: ["bkg-api/*"],
     },

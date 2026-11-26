@@ -19,8 +19,10 @@ import { initOpencodeVersion } from "./lib/providers/opencode"
 import { ensurePaths, PATHS } from "./lib/storage/paths"
 import { initProxyFromEnv } from "./lib/http/proxy"
 import {
-  getConfiguredApiKeys,
+  getConfiguredApiKeyCount,
+  getEffectiveGatewayApiKeys,
   getMissingApiKeysMessage,
+  initializeGatewayApiKeys,
 } from "./lib/auth/request-auth"
 import {
   DEFAULT_SERVER_HOST,
@@ -117,11 +119,9 @@ export async function runServer(options: RunServerOptions): Promise<void> {
 
   const config = mergeConfigWithDefaults()
 
-  const configuredApiKeys = getConfiguredApiKeys()
-  const binding = resolveServerBinding(
-    options.host,
-    configuredApiKeys.length > 0,
-  )
+  await initializeGatewayApiKeys()
+  const configuredApiKeyCount = getConfiguredApiKeyCount()
+  const binding = resolveServerBinding(options.host, configuredApiKeyCount > 0)
 
   const missingApiKeysMessage = getMissingApiKeysMessage()
   if (missingApiKeysMessage) {
@@ -176,18 +176,25 @@ export async function runServer(options: RunServerOptions): Promise<void> {
     plugins,
   })
 
-  const { initializeApiKeyQuotas } = await import(
-    "./lib/auth/api-key-quota-runtime"
-  )
-  const { startTokenUsageRetention } = await import(
-    "./lib/token-usage/retention"
-  )
+  const { initializeApiKeyQuotas } =
+    await import("./lib/auth/api-key-quota-runtime")
+  const { startTokenUsageRetention } =
+    await import("./lib/token-usage/retention")
   const { startVideoUsageSettlement } = await import("./lib/video-settlement")
-  const { settlePendingVideoUsage } = await import(
-    "./services/xai/video-usage-settlement"
-  )
+  const { settlePendingVideoUsage } =
+    await import("./services/xai/video-usage-settlement")
   await startTokenUsageRetention()
-  if (config.auth?.apiKeyConfigs?.some((key) => key.quota)) {
+  let hasApiKeyQuota =
+    config.auth?.apiKeyConfigs?.some((key) => key.quota) ?? false
+  try {
+    hasApiKeyQuota =
+      (await getEffectiveGatewayApiKeys()).some((key) => key.quota)
+      || hasApiKeyQuota
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    consola.warn(`Failed to load gateway API keys for quotas: ${message}`)
+  }
+  if (hasApiKeyQuota) {
     try {
       await initializeApiKeyQuotas()
     } catch (error) {

@@ -667,7 +667,10 @@ export function upsertConfiguredApiKey(
   const key = normalizeApiKeyRecord(value)
   const config = readEditableConfigFromDisk()
   const entries = normalizeApiKeyRecords(config.auth?.apiKeyConfigs)
-  if (entries.some((entry) => entry.id !== key.id && entry.key === key.key))
+  if (
+    key.key
+    && entries.some((entry) => entry.id !== key.id && entry.key === key.key)
+  )
     throw new Error("API key is already configured")
   const index = entries.findIndex((entry) => entry.id === key.id)
   if (index < 0) entries.push(key)

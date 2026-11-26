@@ -4,7 +4,10 @@ import {
   isDashboardSessionRequest,
   type WebAuthSessionLookup,
 } from "./lib/auth/web-session"
-import { apiKeyUsageRoutes } from "./routes/admin/api-keys/route"
+import {
+  apiKeyAdminRoutes,
+  apiKeyUsageRoutes,
+} from "./routes/admin/api-keys/route"
 import { Hono, type Context } from "hono"
 import { cors } from "hono/cors"
 import { logger } from "hono/logger"
@@ -236,6 +239,7 @@ export function createServer(options: CreateServerOptions = {}): Hono {
   server.route("/admin/usage", usageRoute)
   server.route("/token-usage", tokenUsageRoute)
   server.route("/admin/token-usage", tokenUsageRoute)
+  server.route("/admin/api-keys", apiKeyAdminRoutes)
   server.route("/admin/api-keys/usage", apiKeyUsageRoutes)
   server.route("/responses", responsesRoutes)
   server.route("/alpha/search", alphaSearchRoutes)
