@@ -26,6 +26,8 @@ import {
 } from "~/lib/catalog/provider-model-catalog"
 import { resolveProviderConfig } from "~/lib/providers/provider-resolver"
 import { getProviderAgentModels } from "~/lib/config/provider-management"
+import { getRouterAlias } from "~/lib/router"
+import { getRouterConfig } from "~/lib/router-runtime"
 import { filterHealthyProviderModels } from "~/lib/providers/model-health"
 import { state } from "~/lib/state"
 import type { Model } from "~/lib/types/models"
@@ -460,6 +462,39 @@ function selectAgentProviderModels(
   return selection.map((id) => modelsById.get(id) ?? { id })
 }
 
+/** Synthetic catalog entry for the router alias, only while routing is on. */
+export function getRouterAliasModel(): ClientModel | null {
+  const config = getRouterConfig()
+  if (config.enabled !== true) return null
+  const alias = getRouterAlias(config)
+  const candidates = (config.pool ?? []).filter(
+    (model): model is string =>
+      typeof model === "string" && model.trim().length > 0,
+  ).length
+  return {
+    id: alias,
+    object: "model",
+    type: "model",
+    created: 0,
+    created_at: EPOCH_ISO,
+    owned_by: "router",
+    display_name:
+      candidates > 0 ?
+        `Router (${alias}) - ${candidates} models`
+      : `Router (${alias})`,
+    claude_model_id: alias,
+    context_window: 200_000,
+    max_output_tokens: 32_000,
+    input_modalities: ["text"],
+    output_modalities: ["text"],
+  }
+}
+
+export function getVirtualModels(): Array<ClientModel> {
+  const routerModel = getRouterAliasModel()
+  return routerModel ? [routerModel] : []
+}
+
 export async function getAgentModels(
   requestHeaders: Headers,
   options: {
@@ -467,12 +502,16 @@ export async function getAgentModels(
     healthInitialWaitMs?: number
   } = {},
 ): Promise<Array<ClientModel>> {
-  return getAggregatedModels(requestHeaders, {
+  const models = await getAggregatedModels(requestHeaders, {
     includeImageModels: options.includeImageModels,
     healthInitialWaitMs: options.healthInitialWaitMs,
     selectCopilotModels: selectAgentCopilotModels,
     selectProviderModels: selectAgentProviderModels,
   })
+  const virtual = getVirtualModels()
+  if (virtual.length === 0) return models
+  const existing = new Set(models.map((model) => model.id))
+  return [...virtual.filter((model) => !existing.has(model.id)), ...models]
 }
 
 export function createModelListResponse(

@@ -8,6 +8,7 @@ import {
 } from "~/lib/config"
 import { createHandlerLogger, debugJson, debugJsonTail } from "~/lib/logger"
 import { recordResponsesFirstToken } from "~/lib/http/first-token"
+import { resolveRoutedModel } from "~/lib/router-runtime"
 import { findEndpointModel } from "~/lib/catalog/models"
 import { resolveConfiguredProviderModelAlias } from "~/lib/providers/provider-resolver"
 import { requestContext } from "~/lib/http/request-context"
@@ -70,13 +71,16 @@ export const responsesHandlerDependencies = {
   findEndpointModel,
   isResponsesApiWebSearchEnabled: isConfiguredResponsesApiWebSearchEnabled,
   resolveMappedModel,
+  resolveRoutedModel,
 }
 
 export const handleResponses = async (c: Context) => {
   const payload = await c.req.json<ResponsesPayload>()
   setPluginRequestModel(payload.model)
   const requestedModel = payload.model
-  payload.model = responsesHandlerDependencies.resolveMappedModel(payload.model)
+  payload.model = responsesHandlerDependencies.resolveMappedModel(
+    responsesHandlerDependencies.resolveRoutedModel(payload.model, payload),
+  )
   if (payload.model !== requestedModel) {
     consola.debug(
       `Resolved model mapping: ${requestedModel} -> ${payload.model}`,
