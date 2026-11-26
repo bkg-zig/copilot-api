@@ -67,12 +67,16 @@ export function resolveProviderAuthType(
   }
 
   if (authType === "oauth2") {
-    if (providerName === "codex" || providerName === "xai") {
+    if (
+      providerName === "codex"
+      || providerName === "xai"
+      || providerName === "anthropic"
+    ) {
       return authType
     }
 
     consola.warn(
-      `Provider ${providerName} has authType 'oauth2', which is only supported by the builtin codex and xai providers, falling back to ${defaultAuthType}`,
+      `Provider ${providerName} has authType 'oauth2', which is only supported by the builtin codex, xai, and anthropic providers, falling back to ${defaultAuthType}`,
     )
     return defaultAuthType
   }
@@ -95,7 +99,9 @@ function isProviderApiKeyRequired(
     authType !== "none"
     && authType !== "azure-entra"
     && !(
-      (providerName === "codex" || providerName === "xai")
+      (providerName === "codex"
+        || providerName === "xai"
+        || providerName === "anthropic")
       && authType === "oauth2"
     )
   )

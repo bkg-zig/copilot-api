@@ -1108,6 +1108,10 @@ textarea:disabled {
   --quota-brand: var(--copi-lime);
 }
 
+.quota-provider-card[data-provider="anthropic"] {
+  --quota-brand: var(--copi-violet);
+}
+
 .quota-provider-card[data-provider="xai"] {
   --quota-brand: var(--copi-blue);
 }

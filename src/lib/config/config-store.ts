@@ -87,6 +87,7 @@ export const defaultConfig: AppConfig = {
 }
 
 let cachedConfig: AppConfig | null = null
+let configPathOverride: string | null = null
 
 function normalizeAdminApiKey(adminApiKey: unknown): string | null {
   if (typeof adminApiKey !== "string") {
@@ -119,14 +120,14 @@ function isNodeError(error: unknown): error is NodeJS.ErrnoException {
 
 function ensureConfigFile(): void {
   try {
-    fs.accessSync(PATHS.CONFIG_PATH, fs.constants.F_OK)
+    fs.accessSync(getConfigPath(), fs.constants.F_OK)
   } catch (error) {
     if (!isNodeError(error) || error.code !== "ENOENT") {
       throw error
     }
 
     writeFileAtomically(
-      PATHS.CONFIG_PATH,
+      getConfigPath(),
       `${JSON.stringify(defaultConfig, null, 2)}\n`,
     )
   }
@@ -134,10 +135,10 @@ function ensureConfigFile(): void {
 
 function readConfigFromDisk(): AppConfig {
   ensureConfigFile()
-  const raw = fs.readFileSync(PATHS.CONFIG_PATH, "utf8")
+  const raw = fs.readFileSync(getConfigPath(), "utf8")
   if (!raw.trim()) {
     writeFileAtomically(
-      PATHS.CONFIG_PATH,
+      getConfigPath(),
       `${JSON.stringify(defaultConfig, null, 2)}\n`,
     )
     return defaultConfig
@@ -153,7 +154,7 @@ function readConfigFromDisk(): AppConfig {
     // startup merge overwrite the corrupt file (discarding providers, API
     // keys, and model mappings) and, because the default has no apiKeys,
     // silently disable API key authentication on normal routes.
-    const message = `Config file is not valid JSON: ${PATHS.CONFIG_PATH}. Refusing to start with the default config. Fix the JSON syntax or delete the file to regenerate a fresh config.`
+    const message = `Config file is not valid JSON: ${getConfigPath()}. Refusing to start with the default config. Fix the JSON syntax or delete the file to regenerate a fresh config.`
     consola.error(message, error)
     throw new Error(message, { cause: error })
   }
@@ -161,7 +162,7 @@ function readConfigFromDisk(): AppConfig {
 
 export function readEditableConfigFromDisk(): AppConfig {
   try {
-    const raw = fs.readFileSync(PATHS.CONFIG_PATH, "utf8")
+    const raw = fs.readFileSync(getConfigPath(), "utf8")
     if (!raw.trim()) {
       return {}
     }
@@ -176,7 +177,7 @@ export function readEditableConfigFromDisk(): AppConfig {
       return {}
     }
     if (error instanceof SyntaxError) {
-      throw new Error(`Config file is not valid JSON: ${PATHS.CONFIG_PATH}`)
+      throw new Error(`Config file is not valid JSON: ${getConfigPath()}`)
     }
     throw error
   }
@@ -187,7 +188,7 @@ export function writeConfigToDisk(config: AppConfig): void {
     migrateApiKeyConfig(config),
   )
   writeFileAtomically(
-    PATHS.CONFIG_PATH,
+    getConfigPath(),
     `${JSON.stringify(mergedConfig, null, 2)}\n`,
   )
 }
@@ -503,6 +504,22 @@ export function getConfig(): AppConfig {
 // Refresh this process on its next read without rewriting defaults to disk.
 export function invalidateConfigCache(): void {
   cachedConfig = null
+}
+
+/**
+ * Overrides the config file location for the current process.
+ *
+ * Tests use this to run against an isolated config file. Without it every test
+ * would share the single `PATHS.CONFIG_PATH` and reset each other's file, which
+ * made the suite order-dependent.
+ */
+export function setConfigPathOverride(configPath: string | null): void {
+  configPathOverride = configPath
+  cachedConfig = null
+}
+
+export function getConfigPath(): string {
+  return configPathOverride ?? PATHS.CONFIG_PATH
 }
 
 export function reloadConfig(): AppConfig {

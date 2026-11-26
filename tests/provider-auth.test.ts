@@ -136,6 +136,26 @@ describe("resolveProviderAuthType", () => {
     ).toBe("x-api-key")
   })
 
+  test("supports Claude subscription OAuth headers", () => {
+    expect(resolveProviderAuthType("anthropic", "oauth2", "anthropic")).toBe(
+      "oauth2",
+    )
+    const headers = buildProviderUpstreamHeaders(
+      createProviderConfig({
+        name: "anthropic",
+        type: "anthropic",
+        authType: "oauth2",
+        apiKey: "claude-access-token",
+      }),
+      new Headers({ "anthropic-beta": "context-1m-2025-08-07" }),
+    )
+    expect(headers.authorization).toBe("Bearer claude-access-token")
+    expect(headers["anthropic-beta"]?.startsWith("oauth-2025-04-20")).toBe(true)
+    expect(headers["anthropic-beta"]).toContain("claude-code-20250219")
+    expect(headers["anthropic-beta"]).toContain("context-1m-2025-08-07")
+    expect(headers["x-app"]).toBe("cli")
+  })
+
   test("falls back for non-codex oauth2 providers", () => {
     expect(
       resolveProviderAuthType("custom", "oauth2", "openai-responses"),

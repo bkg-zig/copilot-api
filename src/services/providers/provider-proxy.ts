@@ -10,6 +10,11 @@ import {
   normalizeProviderBaseUrl,
   type ResolvedProviderConfig,
 } from "~/lib/config"
+import {
+  CLAUDE_OAUTH_BETA,
+  CLAUDE_OAUTH_USER_AGENT,
+  CLAUDE_OAUTH_VERSION,
+} from "~/lib/auth/claude-code/oauth"
 import { getGrokBuildVersion } from "~/lib/providers/grok-build"
 import { XAI_API_BASE_URL } from "~/lib/auth/oauth/xai"
 import {
@@ -134,7 +139,42 @@ export function buildProviderUpstreamHeaders(
     }
   }
 
+  if (
+    providerConfig.name === "anthropic"
+    && providerConfig.authType === "oauth2"
+  ) {
+    // The Claude subscription token is only accepted with the OAuth beta and
+    // a CLI-like client identity. Order matters: keep oauth-2025-04-20 first.
+    headers["anthropic-version"] = CLAUDE_OAUTH_VERSION
+    headers["anthropic-beta"] = mergeBetaHeaders(headers["anthropic-beta"], [
+      CLAUDE_OAUTH_BETA,
+      "claude-code-20250219",
+    ])
+    headers["x-app"] = "cli"
+    headers["user-agent"] = CLAUDE_OAUTH_USER_AGENT
+  }
+
   return headers
+}
+
+function mergeBetaHeaders(
+  current: string | undefined,
+  required: Array<string>,
+): string {
+  const values = new Set(
+    (current ?? "")
+      .split(",")
+      .map((value) => value.trim())
+      .filter(Boolean),
+  )
+  for (const value of required) values.add(value)
+  // Keep the OAuth beta first. Anthropic rejects the token when it is absent
+  // or listed after unrelated betas.
+  const ordered = [
+    ...required.filter((value) => values.has(value)),
+    ...[...values].filter((value) => !required.includes(value)),
+  ]
+  return ordered.join(",")
 }
 
 export const resolveOpencodeMessagesSession = (): string | undefined => {

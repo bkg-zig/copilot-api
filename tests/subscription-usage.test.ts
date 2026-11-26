@@ -9,6 +9,7 @@ import { state } from "~/lib/state"
 import * as subscriptionUsage from "~/services/subscription-usage"
 import {
   getSubscriptionUsage,
+  normalizeClaudeUsage,
   normalizeCodexUsage,
   normalizeXaiUsage,
   normalizeCopilotUsage,
@@ -348,6 +349,24 @@ describe("Codex subscription usage", () => {
         rate_limit: { primary_window: { used_percent: NaN } },
       }),
     ).toThrow()
+  })
+})
+
+describe("Claude subscription usage", () => {
+  test("maps Anthropic OAuth windows and extra usage", () => {
+    const claude = normalizeClaudeUsage({
+      five_hour: { utilization: 12.5, resets_at: "2026-11-25T12:00:00.000Z" },
+      seven_day: { utilization: 40 },
+      extra_usage: { is_enabled: true, utilization: 100 },
+    })
+    expect(claude.provider).toBe("anthropic")
+    expect(claude.windows.map((window) => window.id)).toEqual([
+      "anthropic:five_hour",
+      "anthropic:seven_day",
+      "anthropic:extra_usage",
+    ])
+    expect(claude.limitReached).toBe(true)
+    expect(normalizeClaudeUsage({}).windows).toEqual([])
   })
 })
 

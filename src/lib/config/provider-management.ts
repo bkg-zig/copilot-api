@@ -3,13 +3,13 @@ import { z } from "zod"
 import { GITHUB_COPILOT_PROVIDER } from "../providers/github-copilot-provider"
 
 import {
+  getConfigPath,
   invalidateConfigCache,
   readEditableConfigFromDisk,
   writeConfigToDisk,
   type AppConfig,
   type ProviderConfig,
 } from "./config-store"
-import { PATHS } from "../storage/paths"
 import type { ProviderManagementConfig } from "../types/provider-management"
 export type {
   ProviderManagementConfig,
@@ -62,7 +62,7 @@ export function getProviderManagementConfig(
     ...config.providers,
   }
   return {
-    configPath: PATHS.CONFIG_PATH,
+    configPath: getConfigPath(),
     providers: Object.entries(providers)
       .filter(([name]) => name !== "copilot")
       .map(([name, provider]) => ({

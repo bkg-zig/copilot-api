@@ -15,6 +15,7 @@ const GITHUB_TOKEN_PATH = path.join(
 )
 const CODEX_CREDENTIAL_PATH = path.join(APP_DIR, "codex_credentials.json")
 const XAI_CREDENTIAL_PATH = path.join(APP_DIR, "xai_credentials.json")
+const CLAUDE_CREDENTIAL_PATH = path.join(APP_DIR, "claude_oauth.json")
 const CONFIG_PATH = path.join(APP_DIR, "config.json")
 
 export const PATHS = {
@@ -22,6 +23,7 @@ export const PATHS = {
   GITHUB_TOKEN_PATH,
   CODEX_CREDENTIAL_PATH,
   XAI_CREDENTIAL_PATH,
+  CLAUDE_CREDENTIAL_PATH,
   CONFIG_PATH,
 }
 

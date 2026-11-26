@@ -301,6 +301,31 @@ describe("builtin provider config", () => {
     expect(JSON.parse(output)).toBeNull()
   })
 
+  test("allows anthropic oauth2 without a stored API key", () => {
+    const tempDir = createTempConfigDir()
+    writeConfigFile(tempDir, {
+      providers: {
+        anthropic: {
+          type: "anthropic",
+          authType: "oauth2",
+          baseUrl: "https://api.anthropic.com",
+        },
+      },
+    })
+
+    const output = runScript(
+      tempDir,
+      'const { getProviderConfig } = await import("./src/lib/config"); console.log(JSON.stringify(getProviderConfig("anthropic")));',
+    )
+
+    expect(JSON.parse(output)).toMatchObject({
+      name: "anthropic",
+      type: "anthropic",
+      authType: "oauth2",
+      apiKey: "",
+    })
+  })
+
   test("returns commentary prompt for gpt-5.3+ models by default", () => {
     const tempDir = createTempConfigDir()
     writeConfigFile(tempDir, {})

@@ -5,9 +5,11 @@ import path from "node:path"
 import { fileURLToPath } from "node:url"
 
 import type { ProviderConfig, ResolvedProviderConfig } from "~/lib/config"
+import { PATHS } from "~/lib/storage/paths"
 import {
   ensureConfiguredProviderModelAlias,
   resolveConfiguredProviderModelAlias,
+  resolveProviderConfig,
 } from "~/lib/providers/provider-resolver"
 
 interface CodexCredentialsShape {
@@ -132,6 +134,51 @@ describe("provider resolver", () => {
       codexVisible: false,
     })
   })
+  test("resolves anthropic oauth2 from the Claude subscription credential file", async () => {
+    const tempDir = createTempDir()
+    const credentialPath = path.join(tempDir, "claude_oauth.json")
+    fs.writeFileSync(
+      credentialPath,
+      `${JSON.stringify({
+        version: 1,
+        accessToken: "claude-access-token",
+        refreshToken: "claude-refresh-token",
+        expiresAt: Date.now() + 60 * 60 * 1000,
+      })}\n`,
+    )
+    const anthropic = {
+      name: "anthropic",
+      type: "anthropic",
+      authType: "oauth2",
+      baseUrl: "https://api.anthropic.com",
+      apiKey: "",
+    } as const
+    const previous = PATHS.CLAUDE_CREDENTIAL_PATH
+    PATHS.CLAUDE_CREDENTIAL_PATH = credentialPath
+    try {
+      const resolved = await resolveProviderConfig(
+        "anthropic",
+        () => Promise.resolve("unused"),
+        () => anthropic,
+      )
+      expect(resolved).toMatchObject({
+        apiKey: "claude-access-token",
+        authType: "oauth2",
+        name: "anthropic",
+      })
+      PATHS.CLAUDE_CREDENTIAL_PATH = path.join(tempDir, "missing.json")
+      expect(
+        await resolveProviderConfig(
+          "anthropic",
+          () => Promise.resolve("unused"),
+          () => anthropic,
+        ),
+      ).toBeNull()
+    } finally {
+      PATHS.CLAUDE_CREDENTIAL_PATH = previous
+    }
+  })
+
   test("resolves codex from config.providers to the ChatGPT Codex backend", () => {
     const tempDir = createTempDir()
     writeConfigFile(tempDir, {

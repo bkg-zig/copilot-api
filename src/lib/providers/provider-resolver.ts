@@ -9,6 +9,7 @@ import {
 } from "~/lib/catalog/provider-model"
 import { state } from "~/lib/state"
 import { setupCodexToken } from "~/lib/auth/token"
+import { getClaudeAccessToken } from "~/lib/auth/claude-code/oauth"
 import { getXaiAccessToken } from "~/lib/auth/xai-token"
 import { XAI_API_BASE_URL } from "~/lib/auth/oauth/xai"
 
@@ -30,9 +31,8 @@ let cachedAzureAccessTokenProvider: Promise<AzureAccessTokenProvider> | null =
 async function getAzureAccessTokenProvider(): Promise<AzureAccessTokenProvider> {
   cachedAzureAccessTokenProvider ??= (async () => {
     try {
-      const { DefaultAzureCredential, getBearerTokenProvider } = await import(
-        "@azure/identity"
-      )
+      const { DefaultAzureCredential, getBearerTokenProvider } =
+        await import("@azure/identity")
       return getBearerTokenProvider(
         new DefaultAzureCredential(),
         AZURE_OPENAI_SCOPE,
@@ -106,6 +106,13 @@ export async function resolveProviderConfig(
           apiKey: accessToken,
         }
       : null
+  }
+  if (
+    providerConfig?.name === "anthropic"
+    && providerConfig.authType === "oauth2"
+  ) {
+    const accessToken = await getClaudeAccessToken()
+    return accessToken ? { ...providerConfig, apiKey: accessToken } : null
   }
   if (providerConfig?.authType !== "azure-entra") {
     return providerConfig

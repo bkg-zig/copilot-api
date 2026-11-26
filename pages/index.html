@@ -682,6 +682,9 @@
       .quota-provider-card[data-provider="codex"] {
         --quota-brand: var(--neon-mint);
       }
+      .quota-provider-card[data-provider="anthropic"] {
+        --quota-brand: var(--copi-violet, #7c5cbf);
+      }
       .quota-provider-card[data-provider="xai"] {
         --quota-brand: #4dc3ff;
       }
@@ -1530,6 +1533,11 @@
             name: "Codex",
             product: "OpenAI",
             logo: "data:image/svg+xml,%3Csvg%20width%3D%2224%22%20height%3D%2224%22%20viewBox%3D%220%200%2040%2040%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%3E%0A%3Cpath%20d%3D%22M32.8377%2017.282C33.2127%2016.25%2033.3072%2015.218%2033.2127%2014.1875C33.1197%2013.1571%2032.7447%2012.1251%2032.2752%2011.1876C31.4322%209.78209%2030.2127%208.6571%2028.8072%208.0001C27.3072%207.34461%2025.7127%207.15711%2024.1197%207.53211C23.3698%206.78212%2022.5253%206.12512%2021.5878%205.65713C20.6503%205.18913%2019.5253%205.00013%2018.4948%205.00013C16.8851%204.99074%2015.3125%205.48246%2013.9948%206.40712C12.6824%207.34311%2011.7449%208.6571%2011.2754%2010.1571C10.1504%2010.4376%209.21289%2010.9071%208.27539%2011.4696C7.4324%2012.1251%206.77541%2012.9696%206.21291%2013.8126C5.36992%2015.2195%205.08792%2016.8125%205.27542%2018.407C5.46399%2019.9968%206.11605%2021.496%207.1504%2022.718C6.79608%2023.7086%206.66795%2024.7659%206.77541%2025.8124C6.86991%2026.8444%207.2449%2027.8749%207.7129%2028.8124C8.55739%2030.2194%209.77538%2031.3444%2011.1824%2031.9999C12.6824%2032.6569%2014.2753%2032.8444%2015.8698%2032.4694C16.6198%2033.2194%2017.4628%2033.8749%2018.4003%2034.3444C19.3378%2034.8139%2020.4628%2034.9999%2021.4948%2034.9999C23.1043%2035.0097%2024.6769%2034.5185%2025.9947%2033.5944C27.3072%2032.6569%2028.2447%2031.3444%2028.7127%2029.8444C29.7719%2029.6432%2030.7682%2029.1934%2031.6197%2028.5319C32.4627%2027.8749%2033.2127%2027.1249%2033.6822%2026.1874C34.5251%2024.7819%2034.8071%2023.1875%2034.6196%2021.5945C34.4322%2020%2033.8697%2018.5015%2032.8377%2017.282ZM21.5878%2033.0304C20.0878%2033.0304%2018.9628%2032.5609%2017.9323%2031.7179C17.9323%2031.7179%2018.0253%2031.6234%2018.1198%2031.6234L24.1197%2028.1554C24.2862%2028.0803%2024.4196%2027.9469%2024.4947%2027.7804C24.5698%2027.636%2024.6021%2027.4731%2024.5877%2027.3109V18.875L27.1197%2020.375V27.3124C27.1455%2028.0547%2027.0215%2028.7945%2026.755%2029.4878C26.4885%2030.181%2026.085%2030.8134%2025.5687%2031.3473C25.0523%2031.8811%2024.4337%2032.3054%2023.7497%2032.5949C23.0658%2032.8843%2022.3305%2033.0314%2021.5878%2033.0304ZM9.49488%2027.8749C8.83789%2026.7499%208.55739%2025.4374%208.83789%2024.125C8.83789%2024.125%208.93239%2024.2195%209.02539%2024.2195L15.0253%2027.6874C15.1693%2027.7638%2015.3325%2027.7966%2015.4948%2027.7819C15.6823%2027.7819%2015.8698%2027.7819%2015.9628%2027.6874L23.2753%2023.4695V26.3749L17.1823%2029.9374C16.5506%2030.3042%2015.8527%2030.5427%2015.1287%2030.6393C14.4046%2030.7358%2013.6686%2030.6884%2012.9629%2030.4999C11.4629%2030.1249%2010.2449%2029.1874%209.49488%2027.8749ZM7.9004%2014.8445C8.56239%2013.7234%209.58826%2012.8627%2010.8074%2012.4056V19.532C10.8074%2019.718%2010.8074%2019.907%2010.9004%2020C10.9755%2020.1665%2011.1089%2020.2998%2011.2754%2020.375L18.5878%2024.5944L16.0573%2026.0944L10.0574%2022.625C9.41842%2022.2639%208.85742%2021.7797%208.40684%2021.2004C7.95627%2020.6211%207.62506%2019.9582%207.4324%2019.25C7.05741%2017.8445%207.1504%2016.157%207.9004%2014.8445ZM28.6197%2019.625L21.3073%2015.407L23.8377%2013.9071L29.8377%2017.375C30.7752%2017.9375%2031.5252%2018.6875%2031.9947%2019.625C32.4642%2020.5625%2032.7447%2021.5945%2032.6502%2022.7195C32.5603%2023.7755%2032.1699%2024.7837%2031.5252%2025.6249C30.8697%2026.4694%2030.0252%2027.1249%2028.9947%2027.4999V20.375C28.9947%2020.1875%2028.9947%2020%2028.9002%2019.907C28.9002%2019.907%2028.8072%2019.718%2028.6197%2019.625ZM31.1502%2015.875C31.1502%2015.875%2031.0572%2015.782%2030.9627%2015.782L24.9627%2012.3126C24.7752%2012.2196%2024.6822%2012.2196%2024.4947%2012.2196C24.3072%2012.2196%2024.1197%2012.2196%2024.0252%2012.3126L16.7128%2016.532V13.6251L22.8073%2010.0626C23.7448%209.50009%2024.7752%209.31259%2025.9002%209.31259C26.9322%209.31259%2027.9627%209.68759%2028.9002%2010.3446C29.7447%2011.0001%2030.4947%2011.8446%2030.8697%2012.7821C31.2447%2013.7196%2031.3377%2014.8445%2031.1502%2015.875ZM15.4003%2021.125L12.8699%2019.625V12.5946C12.8699%2011.5626%2013.1503%2010.4376%2013.7128%209.59459C14.2753%208.6571%2015.1198%208.0001%2016.0573%207.53211C17.0127%207.05249%2018.0956%206.88812%2019.1503%207.06261C20.1823%207.15711%2021.2128%207.62511%2022.0573%208.2821C22.0573%208.2821%2021.9628%208.3751%2021.8698%208.3751L15.8698%2011.8446C15.7033%2011.9197%2015.57%2012.0531%2015.4948%2012.2196C15.4003%2012.4071%2015.4003%2012.5001%2015.4003%2012.6876V21.125ZM16.7128%2018.125L19.9948%2016.25L23.2753%2018.125V21.875L19.9948%2023.75L16.7128%2021.875V18.125Z%22%20fill%3D%22currentColor%22%2F%3E%0A%3C%2Fsvg%3E%0A",
+          },
+          anthropic: {
+            name: "Anthropic",
+            product: "Claude",
+            logo: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='currentColor' d='M5 4h3.2l3.8 12.2L15.8 4H19l-6.1 16h-1.8z'/%3E%3C/svg%3E",
           },
           xai: {
             name: "xAI",
@@ -2840,7 +2848,12 @@
             ],
             ["codex", "OpenAI Codex", "OpenAI OAuth / Codex", "codex"],
             ["xai", "xAI", "Grok Device Login", "xai"],
-            ["anthropic", "Anthropic", "Claude API key", "anthropic"],
+            [
+              "anthropic",
+              "Anthropic",
+              "Claude subscription or API key",
+              "anthropic",
+            ],
             [
               "opencode-go",
               "OpenCode Go",
@@ -2862,15 +2875,19 @@
                   : active
                     ? "AUTHORIZING"
                     : "NOT CONNECTED";
+                const busy = state.providerAuthBusy || active ? "disabled" : "";
+                const pasteForm = `<form data-oauth-callback-form><label class="field-label" for="${id}-oauth-callback">Login code or callback URL</label><input id="${id}-oauth-callback" name="input" autocomplete="off" required><button class="btn btn-primary" type="submit">Submit authorization</button></form>`;
                 const button =
                   id === "anthropic"
-                    ? `<form data-anthropic-form class="provider-connect-form"><label class="field-label" for="anthropic-api-key">API key</label><input id="anthropic-api-key" name="apiKey" type="password" autocomplete="off" placeholder="sk-ant-… from the Anthropic Console" required><button class="btn btn-primary" type="submit">Save key</button></form>`
+                    ? `<div class="provider-connect-actions"><button class="btn btn-primary" type="button" data-provider-auth-start="anthropic" ${busy}>${status.authMethod === "oauth" ? "Sign in again" : "Sign in with Claude"}</button>${status.authMethod === "oauth" ? `<button class="btn" type="button" data-anthropic-logout>Sign out</button>` : ""}<form data-anthropic-form class="provider-connect-form"><label class="field-label" for="anthropic-api-key">API key</label><input id="anthropic-api-key" name="apiKey" type="password" autocomplete="off" placeholder="sk-ant-… from the Anthropic Console"><button class="btn" type="submit">Save key</button></form></div>`
                     : id === "opencode-go"
                     ? `<form data-opencode-go-form class="provider-connect-form"><label class="field-label" for="opencode-go-key">API token</label><input id="opencode-go-key" name="apiKey" type="password" autocomplete="off" placeholder="OpenCode Go token" required><button class="btn btn-primary" type="submit">Save token</button></form>`
-                    : `<button class="btn btn-primary" type="button" data-provider-auth-start="${id}" ${state.providerAuthBusy || active ? "disabled" : ""}>${connected ? "Reconnect" : "Connect account"}</button>`;
-                let details = "";
+                    : `<button class="btn btn-primary" type="button" data-provider-auth-start="${id}" ${busy}>${connected ? "Reconnect" : "Connect account"}</button>`;
+                let details = status.email
+                  ? `<p class="panel-meta">${escapeHtml(status.email)}</p>`
+                  : "";
                 if (active && operation.auth) {
-                  details = `<div class="provider-auth-details"><p>Complete authorization at <a href="${escapeHtml(operation.auth.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(operation.auth.verificationUri || operation.auth.url)}</a></p>${operation.auth.userCode ? `<p class="provider-user-code">${escapeHtml(operation.auth.userCode)}</p>` : ""}${id === "codex" ? `<form data-codex-callback-form><label class="field-label" for="codex-oauth-callback">Redirect URL or authorization code</label><input id="codex-oauth-callback" name="input" autocomplete="off" required><button class="btn btn-primary" type="submit">Submit authorization</button></form>` : `<p class="panel-meta">After approving the request, this page will detect the completed login.</p>`}</div>`;
+                  details += `<div class="provider-auth-details"><p>Complete authorization at <a href="${escapeHtml(operation.auth.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(operation.auth.verificationUri || operation.auth.url)}</a></p>${operation.auth.userCode ? `<p class="provider-user-code">${escapeHtml(operation.auth.userCode)}</p>` : ""}${id === "codex" || id === "anthropic" ? pasteForm : `<p class="panel-meta">After approving the request, this page will detect the completed login.</p>`}</div>`;
                 }
                 return `<article class="provider-connect-card"><div class="provider-connect-heading"><div><h3>${name}</h3><p>${description}</p></div><span class="provider-connect-status" data-state="${connected ? "ready" : active ? "pending" : "idle"}">${label}</span></div>${button}${details}</article>`;
               })
@@ -3015,6 +3032,24 @@
           }
         }
 
+        async function signOutAnthropic() {
+          try {
+            const response = await fetch("/auth/providers/anthropic/logout", {
+              method: "POST",
+              credentials: "same-origin",
+            });
+            const payload = await response.json().catch(() => ({}));
+            if (!response.ok)
+              throw new Error(payload.error || `HTTP ${response.status}`);
+            state.providerAuthError = "";
+            await loadProviderAuthStatus();
+            await refreshSubscriptionQuotas("anthropic");
+          } catch (error) {
+            state.providerAuthError = getErrorMessage(error);
+            render("subscriptions");
+          }
+        }
+
         async function saveAnthropicKey(event) {
           event.preventDefault();
           const form = event.target.closest("form");
@@ -3032,6 +3067,7 @@
             form.reset();
             state.providerAuthError = "";
             await loadProviderAuthStatus();
+            await refreshSubscriptionQuotas("anthropic");
           } catch (error) {
             state.providerAuthError = getErrorMessage(error);
             render("subscriptions");
@@ -5059,6 +5095,10 @@
             void handleAdminContentClick(event);
             return;
           }
+          if (event.target.closest("[data-anthropic-logout]")) {
+            void signOutAnthropic();
+            return;
+          }
           const providerAuthStart = event.target.closest(
             "[data-provider-auth-start]",
           );
@@ -5231,7 +5271,11 @@
               void sendPlaygroundMessage(event);
               return;
             }
-            if (event.target.matches("[data-codex-callback-form]")) {
+            if (
+              event.target.matches(
+                "[data-codex-callback-form], [data-oauth-callback-form]",
+              )
+            ) {
               void submitCodexOAuthCallback(event);
               return;
             }

@@ -9,6 +9,11 @@ import {
 import { getXaiAccounts, persistXaiCredentials } from "~/lib/auth/xai-token"
 import { loginCodex } from "~/lib/auth/oauth/codex"
 import { loginXai } from "~/lib/auth/oauth/xai"
+import {
+  ClaudeOAuthError,
+  createClaudeOAuthLogin,
+} from "~/lib/auth/claude-code/oauth"
+import { syncClaudeProviderConfig } from "~/lib/auth/claude-code/provider"
 import { readGitHubToken, writeGitHubToken } from "~/lib/auth/credential-store"
 import { getDeviceCode } from "~/services/github/get-device-code"
 import { pollAccessToken } from "~/services/github/poll-access-token"
@@ -21,9 +26,9 @@ import {
   checkAnthropicApiKey,
 } from "~/lib/providers/anthropic-api-key"
 
-export const providerAuthRoutes = new Hono()
+type ProviderName = "github-copilot" | "codex" | "xai" | "anthropic"
 
-type ProviderName = "github-copilot" | "codex" | "xai"
+const claudeOAuthLogin = createClaudeOAuthLogin()
 type OperationStatus = "authorizing" | "connected" | "failed" | "cancelled"
 type AuthInfo = {
   url: string
@@ -43,6 +48,7 @@ type AuthOperation = {
   controller: AbortController
   resolveCode?: (value: string) => void
   rejectCode?: (reason: Error) => void
+  claudeFlowId?: string
   resolveReady?: () => void
   ready: Promise<void>
 }
@@ -143,6 +149,37 @@ async function startOperation(operation: AuthOperation): Promise<void> {
         activateAccount: true,
         enableProvider: false,
       })
+    } else if (operation.provider === "anthropic") {
+      const started = claudeOAuthLogin.start()
+      operation.claudeFlowId = started.flowId
+      publishAuthInfo(operation, {
+        url: started.authUrl,
+        expiresAt: started.expiresAt,
+        instructions:
+          "Open the Claude sign-in, then paste the login code or the full callback URL.",
+      })
+      const code = await new Promise<string>((resolve, reject) => {
+        operation.resolveCode = resolve
+        operation.rejectCode = reject
+        operation.controller.signal.addEventListener(
+          "abort",
+          () => {
+            reject(
+              operation.controller.signal.reason instanceof Error ?
+                operation.controller.signal.reason
+              : new Error("Authorization cancelled"),
+            )
+          },
+          { once: true },
+        )
+      })
+      const status = await claudeOAuthLogin.submit(started.flowId, code)
+      if (!status.loggedIn) {
+        throw new ClaudeOAuthError(
+          status.error ?? "Claude sign-in did not complete.",
+        )
+      }
+      syncClaudeProviderConfig(true)
     } else {
       const credentials = await loginXai({
         onAuth: (info) => publishAuthInfo(operation, info),
@@ -162,196 +199,237 @@ async function startOperation(operation: AuthOperation): Promise<void> {
   } finally {
     operation.resolveReady?.()
     operation.resolveReady = undefined
+    if (operation.claudeFlowId) {
+      claudeOAuthLogin.cancel(operation.claudeFlowId)
+      operation.claudeFlowId = undefined
+    }
     operation.resolveCode = undefined
     operation.rejectCode = undefined
   }
 }
 
-async function requireWebUser(c: Parameters<typeof getWebAuthSession>[0]) {
-  const user = await getWebAuthSession(c)
-  if (!user) return null
-  return user
+/**
+ * The route factory keeps the web-session lookup injectable so tests can run
+ * against an isolated database instead of the process-wide singleton.
+ */
+export function createProviderAuthRoutes(
+  lookup: typeof getWebAuthSession = getWebAuthSession,
+) {
+  const routes = new Hono()
+
+  async function requireUser(c: Parameters<typeof lookup>[0]) {
+    const user = await lookup(c)
+    if (!user) return null
+    return user
+  }
+
+  routes.get("/status", async (c) => {
+    const user = await requireUser(c)
+    if (!user) return c.json({ error: "Unauthorized" }, 401)
+    try {
+      const [githubToken, codexAccounts, xaiAccounts] = await Promise.all([
+        readGitHubToken(),
+        getCodexAccounts(),
+        getXaiAccounts(),
+      ])
+      const go = getRawProviderConfig("opencode-go")
+      const anthropic = getRawProviderConfig("anthropic")
+      const claude = await claudeOAuthLogin.status()
+      const anthropicApiKey = Boolean(
+        anthropic?.enabled !== false
+        && anthropic?.authType !== "oauth2"
+        && anthropic?.apiKey?.trim(),
+      )
+      return c.json({
+        providers: {
+          "github-copilot": { connected: Boolean(githubToken), account: null },
+          codex: {
+            connected: codexAccounts.some((item) => item.active),
+            accounts: codexAccounts,
+          },
+          xai: {
+            connected: xaiAccounts.some((item) => item.active),
+            accounts: xaiAccounts,
+          },
+          anthropic: {
+            connected:
+              (claude.loggedIn && anthropic?.authType === "oauth2")
+              || anthropicApiKey,
+            authMethod:
+              claude.loggedIn && anthropic?.authType === "oauth2" ? "oauth"
+              : anthropicApiKey ? "api-key"
+              : null,
+            email: claude.email ?? null,
+            requiresApiKey: !claude.loggedIn,
+          },
+          "opencode-go": {
+            connected: Boolean(go?.enabled !== false && go?.apiKey?.trim()),
+            requiresApiKey: true,
+          },
+        },
+        operations: [...operations.values()]
+          .filter((operation) => operation.userId === user.id)
+          .map(publicOperation),
+      })
+    } catch {
+      return c.json(
+        { error: "Provider-Anmeldestatus konnte nicht geladen werden." },
+        500,
+      )
+    }
+  })
+
+  routes.post("/:provider/start", async (c) => {
+    const user = await requireUser(c)
+    if (!user) return c.json({ error: "Unauthorized" }, 401)
+    const provider = c.req.param("provider")
+    if (
+      provider !== "github-copilot"
+      && provider !== "codex"
+      && provider !== "xai"
+      && provider !== "anthropic"
+    ) {
+      return c.json(
+        { error: "Dieser Anbieter unterstützt keinen Web-OAuth-Login." },
+        400,
+      )
+    }
+    const existing = [...operations.values()].find(
+      (item) =>
+        item.userId === user.id
+        && item.provider === provider
+        && item.status === "authorizing",
+    )
+    if (existing) return c.json(publicOperation(existing))
+    const operation = createOperation(provider, user.id)
+    void startOperation(operation)
+    await Promise.race([
+      operation.ready,
+      new Promise((resolve) => setTimeout(resolve, 5000)),
+    ])
+    if (operation.status === "failed")
+      return c.json(publicOperation(operation), 502)
+    return c.json(publicOperation(operation), 202)
+  })
+
+  routes.get("/operations/:id", async (c) => {
+    const user = await requireUser(c)
+    if (!user) return c.json({ error: "Unauthorized" }, 401)
+    const operation = operations.get(c.req.param("id"))
+    if (!operation || operation.userId !== user.id)
+      return c.json({ error: "Anmeldevorgang nicht gefunden." }, 404)
+    return c.json(publicOperation(operation))
+  })
+
+  routes.post("/operations/:id/callback", async (c) => {
+    const user = await requireUser(c)
+    if (!user) return c.json({ error: "Unauthorized" }, 401)
+    const operation = operations.get(c.req.param("id"))
+    if (
+      !operation
+      || operation.userId !== user.id
+      || (operation.provider !== "codex" && operation.provider !== "anthropic")
+      || operation.status !== "authorizing"
+      || !operation.resolveCode
+    ) {
+      return c.json({ error: "Kein offener OAuth-Anmeldevorgang." }, 409)
+    }
+    const body: unknown = await c.req.json().catch(() => null)
+    const input =
+      body && typeof body === "object" && !Array.isArray(body) ?
+        (body as Record<string, unknown>).input
+      : null
+    if (typeof input !== "string" || !input.trim() || input.length > 8192) {
+      return c.json(
+        {
+          error:
+            "Bitte die vollständige Redirect-URL oder den OAuth-Code einfügen.",
+        },
+        400,
+      )
+    }
+    operation.resolveCode(input.trim())
+    operation.resolveCode = undefined
+    return c.json({ accepted: true })
+  })
+
+  routes.post("/operations/:id/cancel", async (c) => {
+    const user = await requireUser(c)
+    if (!user) return c.json({ error: "Unauthorized" }, 401)
+    const operation = operations.get(c.req.param("id"))
+    if (!operation || operation.userId !== user.id)
+      return c.json({ error: "Anmeldevorgang nicht gefunden." }, 404)
+    operation.controller.abort(new Error("Authorization cancelled by user"))
+    operation.status = "cancelled"
+    operation.resolveCode = undefined
+    operation.rejectCode?.(new Error("Authorization cancelled by user"))
+    return c.json({ cancelled: true })
+  })
+
+  routes.post("/opencode-go", async (c) => {
+    const user = await requireUser(c)
+    if (!user) return c.json({ error: "Unauthorized" }, 401)
+    const body: unknown = await c.req.json().catch(() => null)
+    const apiKey =
+      body && typeof body === "object" && !Array.isArray(body) ?
+        (body as Record<string, unknown>).apiKey
+      : null
+    if (
+      typeof apiKey !== "string"
+      || apiKey.trim().length < 8
+      || apiKey.length > 4096
+    ) {
+      return c.json(
+        { error: "Ein gültiger OpenCode-Go-API-Key ist erforderlich." },
+        400,
+      )
+    }
+    const current = getRawProviderConfig("opencode-go") ?? {}
+    const defaults = QUICK_PROVIDER_CONFIGS["opencode-go"]
+    setProviderConfig("opencode-go", {
+      ...current,
+      type: defaults.type,
+      baseUrl: defaults.baseUrl,
+      authType: "authorization",
+      apiKey: apiKey.trim(),
+      enabled: true,
+      pricingCurrency: defaults.pricingCurrency,
+    })
+    return c.json({ connected: true })
+  })
+
+  routes.post("/anthropic", async (c) => {
+    const user = await requireUser(c)
+    if (!user) return c.json({ error: "Unauthorized" }, 401)
+    const body: unknown = await c.req.json().catch(() => null)
+    const checked = checkAnthropicApiKey(
+      body && typeof body === "object" && !Array.isArray(body) ?
+        (body as Record<string, unknown>).apiKey
+      : null,
+    )
+    if (!checked.ok) return c.json({ error: checked.error }, 400)
+    setProviderConfig(
+      "anthropic",
+      buildAnthropicProviderConfig(
+        getRawProviderConfig("anthropic") ?? {},
+        checked.apiKey,
+      ),
+    )
+    return c.json({ connected: true })
+  })
+
+  routes.post("/anthropic/logout", async (c) => {
+    const user = await requireUser(c)
+    if (!user) return c.json({ error: "Unauthorized" }, 401)
+    const status = await claudeOAuthLogin.logout()
+    const current = getRawProviderConfig("anthropic")
+    if (current?.authType === "oauth2") {
+      setProviderConfig("anthropic", { ...current, enabled: false, apiKey: "" })
+    }
+    return c.json({ connected: false, status })
+  })
+
+  return routes
 }
 
-providerAuthRoutes.get("/status", async (c) => {
-  const user = await requireWebUser(c)
-  if (!user) return c.json({ error: "Unauthorized" }, 401)
-  try {
-    const [githubToken, codexAccounts, xaiAccounts] = await Promise.all([
-      readGitHubToken(),
-      getCodexAccounts(),
-      getXaiAccounts(),
-    ])
-    const go = getRawProviderConfig("opencode-go")
-    const anthropic = getRawProviderConfig("anthropic")
-    return c.json({
-      providers: {
-        "github-copilot": { connected: Boolean(githubToken), account: null },
-        codex: {
-          connected: codexAccounts.some((item) => item.active),
-          accounts: codexAccounts,
-        },
-        xai: {
-          connected: xaiAccounts.some((item) => item.active),
-          accounts: xaiAccounts,
-        },
-        anthropic: {
-          connected: Boolean(
-            anthropic?.enabled !== false && anthropic?.apiKey?.trim(),
-          ),
-          requiresApiKey: true,
-        },
-        "opencode-go": {
-          connected: Boolean(go?.enabled !== false && go?.apiKey?.trim()),
-          requiresApiKey: true,
-        },
-      },
-      operations: [...operations.values()]
-        .filter((operation) => operation.userId === user.id)
-        .map(publicOperation),
-    })
-  } catch {
-    return c.json(
-      { error: "Provider-Anmeldestatus konnte nicht geladen werden." },
-      500,
-    )
-  }
-})
-
-providerAuthRoutes.post("/:provider/start", async (c) => {
-  const user = await requireWebUser(c)
-  if (!user) return c.json({ error: "Unauthorized" }, 401)
-  const provider = c.req.param("provider")
-  if (
-    provider !== "github-copilot"
-    && provider !== "codex"
-    && provider !== "xai"
-  ) {
-    return c.json(
-      { error: "Dieser Anbieter unterstützt keinen Web-OAuth-Login." },
-      400,
-    )
-  }
-  const existing = [...operations.values()].find(
-    (item) =>
-      item.userId === user.id
-      && item.provider === provider
-      && item.status === "authorizing",
-  )
-  if (existing) return c.json(publicOperation(existing))
-  const operation = createOperation(provider, user.id)
-  void startOperation(operation)
-  await Promise.race([
-    operation.ready,
-    new Promise((resolve) => setTimeout(resolve, 5000)),
-  ])
-  if (operation.status === "failed")
-    return c.json(publicOperation(operation), 502)
-  return c.json(publicOperation(operation), 202)
-})
-
-providerAuthRoutes.get("/operations/:id", async (c) => {
-  const user = await requireWebUser(c)
-  if (!user) return c.json({ error: "Unauthorized" }, 401)
-  const operation = operations.get(c.req.param("id"))
-  if (!operation || operation.userId !== user.id)
-    return c.json({ error: "Anmeldevorgang nicht gefunden." }, 404)
-  return c.json(publicOperation(operation))
-})
-
-providerAuthRoutes.post("/operations/:id/callback", async (c) => {
-  const user = await requireWebUser(c)
-  if (!user) return c.json({ error: "Unauthorized" }, 401)
-  const operation = operations.get(c.req.param("id"))
-  if (
-    !operation
-    || operation.userId !== user.id
-    || operation.provider !== "codex"
-    || operation.status !== "authorizing"
-    || !operation.resolveCode
-  ) {
-    return c.json({ error: "Kein offener Codex-Anmeldevorgang." }, 409)
-  }
-  const body: unknown = await c.req.json().catch(() => null)
-  const input =
-    body && typeof body === "object" && !Array.isArray(body) ?
-      (body as Record<string, unknown>).input
-    : null
-  if (typeof input !== "string" || !input.trim() || input.length > 8192) {
-    return c.json(
-      {
-        error:
-          "Bitte die vollständige Redirect-URL oder den OAuth-Code einfügen.",
-      },
-      400,
-    )
-  }
-  operation.resolveCode(input.trim())
-  operation.resolveCode = undefined
-  return c.json({ accepted: true })
-})
-
-providerAuthRoutes.post("/operations/:id/cancel", async (c) => {
-  const user = await requireWebUser(c)
-  if (!user) return c.json({ error: "Unauthorized" }, 401)
-  const operation = operations.get(c.req.param("id"))
-  if (!operation || operation.userId !== user.id)
-    return c.json({ error: "Anmeldevorgang nicht gefunden." }, 404)
-  operation.controller.abort(new Error("Authorization cancelled by user"))
-  operation.status = "cancelled"
-  operation.resolveCode = undefined
-  operation.rejectCode?.(new Error("Authorization cancelled by user"))
-  return c.json({ cancelled: true })
-})
-
-providerAuthRoutes.post("/opencode-go", async (c) => {
-  const user = await requireWebUser(c)
-  if (!user) return c.json({ error: "Unauthorized" }, 401)
-  const body: unknown = await c.req.json().catch(() => null)
-  const apiKey =
-    body && typeof body === "object" && !Array.isArray(body) ?
-      (body as Record<string, unknown>).apiKey
-    : null
-  if (
-    typeof apiKey !== "string"
-    || apiKey.trim().length < 8
-    || apiKey.length > 4096
-  ) {
-    return c.json(
-      { error: "Ein gültiger OpenCode-Go-API-Key ist erforderlich." },
-      400,
-    )
-  }
-  const current = getRawProviderConfig("opencode-go") ?? {}
-  const defaults = QUICK_PROVIDER_CONFIGS["opencode-go"]
-  setProviderConfig("opencode-go", {
-    ...current,
-    type: defaults.type,
-    baseUrl: defaults.baseUrl,
-    authType: "authorization",
-    apiKey: apiKey.trim(),
-    enabled: true,
-    pricingCurrency: defaults.pricingCurrency,
-  })
-  return c.json({ connected: true })
-})
-
-providerAuthRoutes.post("/anthropic", async (c) => {
-  const user = await requireWebUser(c)
-  if (!user) return c.json({ error: "Unauthorized" }, 401)
-  const body: unknown = await c.req.json().catch(() => null)
-  const checked = checkAnthropicApiKey(
-    body && typeof body === "object" && !Array.isArray(body) ?
-      (body as Record<string, unknown>).apiKey
-    : null,
-  )
-  if (!checked.ok) return c.json({ error: checked.error }, 400)
-  setProviderConfig(
-    "anthropic",
-    buildAnthropicProviderConfig(
-      getRawProviderConfig("anthropic") ?? {},
-      checked.apiKey,
-    ),
-  )
-  return c.json({ connected: true })
-})
+export const providerAuthRoutes = createProviderAuthRoutes()
