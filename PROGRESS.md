@@ -70,7 +70,8 @@ enthalten und unten mit ihren Prüfergebnissen geführt.
    `google-ai-studio/*` und `anthropic/*` zusätzlich freigegeben werden. Bis
    dahin bleibt `bkg-api/*` die Vorgabe; diese Dokumentation trifft keine
    Produktentscheidung.
-2. Veröffentlichungsziel `bkg-zig/copilot-api:mango-port`; finaler Ref nach
-   Abschlussverifikation vom Lead zu bestätigen. Der divergente Branch `mango`
-   bleibt unangetastet; `origin` ist das unveränderte Upstream und für
-   `bkg-zig` nicht beschreibbar.
+2. Veröffentlichung: Push auf `bkg-zig/copilot-api:mango-port` mit Exit 0
+   erfolgt; `git ls-remote` bestätigte den Stand `5eab8f92` (der verifizierte
+   Stand vor dieser Abschlussnotiz). Der divergente Branch `mango` bleibt
+   unangetastet; `origin` ist das unveränderte Upstream und für `bkg-zig`
+   nicht beschreibbar.

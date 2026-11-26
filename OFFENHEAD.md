@@ -65,10 +65,11 @@ Prüfungen und ihre Werte stehen in `PROGRESS.md`.
 - `origin` zeigt weiterhin auf das unveränderte Upstream
   `caozhiyuan/copilot-api`; für `bkg-zig` ist dieser Push-Pfad nicht
   beschreibbar (HTTP 403).
-- Veröffentlichungsziel: `bkg-zig/copilot-api:mango-port`; finaler Ref nach
-  Abschlussverifikation vom Lead zu bestätigen. Der dortige Branch `mango` ist
-  divergent und bleibt unangetastet. Der Remote-Stand wurde hier nicht erneut
-  gegen GitHub verifiziert.
+- Veröffentlichung: Push auf `bkg-zig/copilot-api:mango-port` mit Exit 0
+  erfolgt. `git ls-remote` bestätigte den Stand `5eab8f92` (verifizierter
+  Stand vor dieser Abschlussnotiz); die Notiz selbst wird anschließend
+  nachgeschoben. Der dortige Branch `mango` ist divergent und bleibt
+  unangetastet.
 
 ## Nicht verifiziert
 
@@ -78,5 +79,3 @@ Prüfungen und ihre Werte stehen in `PROGRESS.md`.
   ist belegt.
 - Last, Parallelzugriff, Backup und Wiederherstellung von PostgreSQL/pgvector.
 - Verhalten bei anderen Datenbanken oder Bestandsdaten des pgrust-Images.
-- Remote-Stand des Veröffentlichungsziels; finaler Ref nach
-  Abschlussverifikation vom Lead zu bestätigen.
