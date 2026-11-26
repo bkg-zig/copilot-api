@@ -27,14 +27,21 @@ export function normalizeApiKeys(apiKeys: unknown): Array<string> {
   return [...new Set(normalizedKeys)]
 }
 
+// Shared with deploy/prepare-config.ts: both must hash the exact same bytes.
+export function hashGatewayApiKey(secret: string): string {
+  return createHash("sha256")
+    .update("copilot-api:key:v1\0" + secret)
+    .digest("hex")
+}
+
+export function maskGatewayApiKey(secret: string): string {
+  return secret.length >= 8 ?
+      `${secret.slice(0, 4)}…${secret.slice(-4)}`
+    : "****"
+}
+
 export function legacyApiKeyId(key: string): string {
-  return (
-    "key_"
-    + createHash("sha256")
-      .update("copilot-api:key:v1\0" + key)
-      .digest("hex")
-      .slice(0, 32)
-  )
+  return `key_${hashGatewayApiKey(key).slice(0, 32)}`
 }
 
 function record(value: unknown): Record<string, unknown> {
@@ -53,22 +60,44 @@ function nonEmptyString(value: unknown, field: string): string {
   return value.trim()
 }
 
+const KEY_HASH_PATTERN = /^[0-9a-f]{64}$/iu
+
 export function normalizeApiKeyRecord(value: unknown): GatewayApiKeyConfig {
   if (typeof value === "string") {
     const key = nonEmptyString(value, "API key")
     return { id: legacyApiKeyId(key), key }
   }
   const input = record(value)
-  const key = nonEmptyString(input.key, "API key")
+  const key =
+    typeof input.key === "string" && input.key.trim() ?
+      nonEmptyString(input.key, "API key")
+    : undefined
+  const keyHash =
+    input.keyHash === undefined ?
+      undefined
+    : nonEmptyString(input.keyHash, "API key hash").toLowerCase()
+  if (keyHash !== undefined && !KEY_HASH_PATTERN.test(keyHash))
+    throw new Error("API key hash must be a SHA-256 hex digest")
+  if (key && keyHash && hashGatewayApiKey(key) !== keyHash)
+    throw new Error("API key hash does not match API key")
+  const identity = key ?? keyHash
+  if (!identity) throw new Error("API key or keyHash is required")
   const id =
     input.id === undefined ?
-      legacyApiKeyId(key)
+      legacyApiKeyId(identity)
     : nonEmptyString(input.id, "API key id")
   if (!/^[\w-]{1,128}$/.test(id))
     throw new Error(
       "API key id must contain only letters, digits, underscores, or hyphens",
     )
-  const result: GatewayApiKeyConfig = { id, key }
+  const result: GatewayApiKeyConfig = {
+    id,
+    ...(key && { key }),
+    ...(keyHash && { keyHash }),
+    ...(input.keyHint !== undefined && {
+      keyHint: nonEmptyString(input.keyHint, "API key hint"),
+    }),
+  }
   if (input.name !== undefined)
     result.name = nonEmptyString(input.name, "API key name")
   if (input.enabled !== undefined) {
@@ -124,9 +153,10 @@ export function normalizeApiKeyRecords(
   for (const entry of value) {
     if (typeof entry === "string" && !entry.trim()) continue
     const normalized = normalizeApiKeyRecord(entry)
-    if (keys.has(normalized.key)) continue
+    const identity = normalized.key ?? normalized.keyHash
+    if (identity && keys.has(identity)) continue
     if (ids.has(normalized.id)) throw new Error("API key ids must be unique")
-    keys.add(normalized.key)
+    if (identity) keys.add(identity)
     ids.add(normalized.id)
     result.push(normalized)
   }
@@ -143,6 +173,28 @@ export function isApiKeyActive(
   )
 }
 
+const MODEL_PATTERN_CACHE = new Map<string, RegExp>()
+const MODEL_PATTERN_CACHE_LIMIT = 1024
+
+function compileModelPattern(pattern: string): RegExp {
+  const cached = MODEL_PATTERN_CACHE.get(pattern)
+  if (cached) return cached
+  const expression =
+    "^"
+    + pattern
+      .split("*")
+      .map((part) => part.replace(/[.*+?^$()|[\]{}\\]/g, "\\$&"))
+      .join(".*")
+    + "$"
+  const compiled = new RegExp(expression)
+  if (MODEL_PATTERN_CACHE.size >= MODEL_PATTERN_CACHE_LIMIT) {
+    const oldest = MODEL_PATTERN_CACHE.keys().next().value
+    if (oldest !== undefined) MODEL_PATTERN_CACHE.delete(oldest)
+  }
+  MODEL_PATTERN_CACHE.set(pattern, compiled)
+  return compiled
+}
+
 export function isApiKeyModelAllowed(
   key: GatewayApiKeyConfig,
   model: string,
@@ -151,14 +203,7 @@ export function isApiKeyModelAllowed(
   if (key.allowedModels === undefined) return true
   const target = provider + "/" + model
   return key.allowedModels.some((pattern) => {
-    const expression =
-      "^"
-      + pattern
-        .split("*")
-        .map((part) => part.replace(/[.*+?^$()|[\]{}\\]/g, "\\$&"))
-        .join(".*")
-      + "$"
-    const match = new RegExp(expression)
+    const match = compileModelPattern(pattern)
     return match.test(target) || (!pattern.includes("/") && match.test(model))
   })
 }

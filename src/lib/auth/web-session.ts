@@ -386,6 +386,9 @@ export async function isDashboardSessionRequest(
       || path === "/models"
       || path === "/v1/models"
       || /^\/admin\/(?:usage|token-usage|api-keys\/usage)(?:\/|$)/u.test(path))
+  const isApiKeyAdmin =
+    /^\/admin\/api-keys(?:\/|$)/u.test(path)
+    && ["GET", "POST", "PATCH", "DELETE"].includes(method)
   const isProviderAdmin =
     /^\/admin\/config\/providers(?:\/|$)/u.test(path)
     && ["GET", "POST", "PATCH", "DELETE"].includes(method)
@@ -396,6 +399,7 @@ export async function isDashboardSessionRequest(
     && ["/v1/chat/completions", "/v1/responses", "/v1/messages"].includes(path)
   if (
     !isUsageRead
+    && !isApiKeyAdmin
     && !isProviderAdmin
     && !isProviderAuth
     && !isDashboardModelRequest
