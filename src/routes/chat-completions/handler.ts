@@ -3,14 +3,15 @@ import type { Context } from "hono"
 
 import { streamSSE, type SSEMessage } from "hono/streaming"
 
-import { guardChatCompletionsStream } from "~/lib/chat-completions-stream"
+import { guardChatCompletionsStream } from "~/lib/http/chat-completions-stream"
 import { resolveMappedModel } from "~/lib/config"
-import { recordChatCompletionFirstToken } from "~/lib/first-token"
+import { recordChatCompletionFirstToken } from "~/lib/http/first-token"
+import { resolveRoutedModel } from "~/lib/router-runtime"
 import { createHandlerLogger, debugJson } from "~/lib/logger"
-import { findEndpointModel } from "~/lib/models"
-import { writeSSEIfConnected } from "~/lib/sse"
-import { setPluginRequestModel } from "~/lib/request-events"
-import { resolveConfiguredProviderModelAlias } from "~/lib/provider-resolver"
+import { findEndpointModel } from "~/lib/catalog/models"
+import { writeSSEIfConnected } from "~/lib/http/sse"
+import { setPluginRequestModel } from "~/lib/http/request-events"
+import { resolveConfiguredProviderModelAlias } from "~/lib/providers/provider-resolver"
 import {
   createCopilotTokenUsageRecorder,
   normalizeOpenAIUsage,
@@ -35,7 +36,7 @@ export async function handleCompletion(c: Context) {
   let payload = await c.req.json<ChatCompletionsPayload>()
   setPluginRequestModel(payload.model)
   const requestedModel = payload.model
-  payload.model = resolveMappedModel(payload.model)
+  payload.model = resolveMappedModel(resolveRoutedModel(payload.model, payload))
   if (payload.model !== requestedModel) {
     consola.debug(
       `Resolved model mapping: ${requestedModel} -> ${payload.model}`,

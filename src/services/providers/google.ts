@@ -4,8 +4,11 @@ import {
   getUpstreamTransportConfig,
   type ResolvedProviderConfig,
 } from "~/lib/config"
-import type { GoogleGenerateContentPayload } from "~/lib/types/google"
-import { setPluginRequestActualModel } from "~/lib/request-context"
+import type {
+  GoogleGenerateContentPayload,
+  GoogleGenerateContentRequest,
+} from "~/lib/types/google"
+import { setPluginRequestActualModel } from "~/lib/http/request-context"
 import { fetchUpstreamWithLifecycle } from "~/services/upstream-http"
 
 import {
@@ -17,9 +20,14 @@ import {
 export async function forwardGoogleGenerateContent(
   provider: ResolvedProviderConfig,
   model: string,
-  payload: GoogleGenerateContentPayload,
+  payload: GoogleGenerateContentPayload | GoogleGenerateContentRequest,
   requestHeaders: Headers,
-  options: { stream: boolean; clientSignal: AbortSignal; sessionId?: string },
+  options: {
+    stream: boolean
+    clientSignal?: AbortSignal
+    upstreamSignal?: AbortSignal
+    sessionId?: string
+  },
 ): Promise<Response> {
   const upstreamModel = model.replace(/^models\//u, "")
   consola.log(`<-- model: ${upstreamModel}`)
@@ -40,6 +48,7 @@ export async function forwardGoogleGenerateContent(
       method: "POST",
       headers,
       body: JSON.stringify(payload),
+      signal: options.upstreamSignal,
     },
     {
       clientSignal: options.clientSignal,

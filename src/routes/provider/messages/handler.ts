@@ -6,14 +6,14 @@ import type {
 } from "~/lib/types/anthropic"
 
 import { getClaudeAutoModel, resolveProviderConfigForModel } from "~/lib/config"
-import { fromClaudeDiscoveryModelId } from "~/lib/claude-models"
+import { fromClaudeDiscoveryModelId } from "~/lib/catalog/claude-models"
 
-import { HTTPError } from "~/lib/error"
+import { HTTPError } from "~/lib/http/error"
 
 import { debugJson } from "~/lib/logger"
-import { resolveProviderConfig } from "~/lib/provider-resolver"
+import { resolveProviderConfig } from "~/lib/providers/provider-resolver"
 import { type TokenUsageEndpoint } from "~/lib/token-usage"
-import { setPluginRequestModel } from "~/lib/request-events"
+import { setPluginRequestModel } from "~/lib/http/request-events"
 
 import {
   hasWebSearchServerTool,
@@ -77,10 +77,11 @@ export async function handleProviderMessagesForProvider(
   options: {
     payload: AnthropicMessagesPayload
     provider: string
+    forwardStructuredOutput?: boolean
     usageEndpoint?: TokenUsageEndpoint
   },
 ): Promise<Response> {
-  const { payload, provider, usageEndpoint } = options
+  const { payload, provider, forwardStructuredOutput, usageEndpoint } = options
   const configuredProvider =
     await providerMessagesHandlerDependencies.resolveProviderConfig(provider)
   if (!configuredProvider) {
@@ -135,6 +136,7 @@ export async function handleProviderMessagesForProvider(
       }
 
       return await handleOpenAIResponsesProviderMessages(c, {
+        forwardStructuredOutput,
         modelConfig,
         payload,
         provider,
@@ -147,6 +149,7 @@ export async function handleProviderMessagesForProvider(
       stripWebSearchServerTool(payload)
 
       return await handleOpenAICompatibleProviderMessages(c, {
+        forwardStructuredOutput,
         modelConfig,
         payload,
         provider,
