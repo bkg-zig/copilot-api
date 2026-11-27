@@ -28,6 +28,7 @@ const plugin = modelsPlugin as {
       baseURL?: string
       apiKey?: string
       refreshIntervalMs?: number
+      initialDiscoveryWaitMs?: number
     }
     provider: {
       transform: (callback: Transform) => Promise<void>
@@ -159,7 +160,10 @@ async function waitFor(condition: () => boolean) {
 
 describe("OpenCode v2 model discovery plugin", () => {
   test("registers an enabled Responses provider with native compaction using a single JS file", async () => {
-    const result = await createPlugin()
+    const result = await createPlugin({
+      baseURL: "http://localhost:4141/v1",
+      apiKey: "dummy",
+    })
     expect(plugin.id).toBe("local.provider")
     expect(result.source?.info).toEqual({
       id: "local",
@@ -176,14 +180,34 @@ describe("OpenCode v2 model discovery plugin", () => {
     const [url, init] = (
       fetchMock.mock.calls as unknown as Array<[string, RequestInit]>
     )[0]
-    expect(url).toBe("http://localhost:4141/v1/models")
+    expect(url).toBe("http://localhost:4141/v1/models?wait=0")
     const headers = new Headers(init.headers)
     expect(headers.get("user-agent")).toContain("opencode")
     expect(headers.get("x-api-key")).toBe("dummy")
     expect(init.signal).toBeInstanceOf(AbortSignal)
-    expect(intervalMock).toHaveBeenCalledWith(expect.any(Function), 120_000)
+    expect(intervalMock).toHaveBeenCalledWith(expect.any(Function), 10_000)
     result.cleanup?.()
     expect(clearMock).toHaveBeenCalledWith(timer)
+  })
+
+  test("does not block plugin activation on a slow gateway model catalog", async () => {
+    fetchMock.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          setTimeout(
+            () => resolve(Response.json({ data: [model("late-first-model")] })),
+            30,
+          )
+        }),
+    )
+    const result = await createPlugin({
+      initialDiscoveryWaitMs: 5,
+      refreshIntervalMs: 0,
+    })
+    expect(result.source?.models).toEqual([])
+    await waitFor(() => result.reload.mock.calls.length === 1)
+    expect(result.source?.models).toEqual([model("late-first-model")])
+    result.cleanup?.()
   })
 
   test("preserves gateway-listed Codex and xAI image models and their packages", async () => {
@@ -233,10 +257,10 @@ describe("OpenCode v2 model discovery plugin", () => {
     const [url, init] = (
       fetchMock.mock.calls as unknown as Array<[string, RequestInit]>
     )[0]
-    expect(url).toBe("http://127.0.0.1:4242/v1/models")
+    expect(url).toBe("http://127.0.0.1:4242/v1/models?wait=0")
     expect(new Headers(init.headers).get("x-api-key")).toBe("gateway-test-key")
     expect(intervalMock).not.toHaveBeenCalled()
-    expect(result.cleanup).toBeUndefined()
+    expect(result.cleanup).toBeFunction()
   })
 
   test("allows explicit options to override environment settings", async () => {

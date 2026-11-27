@@ -11,18 +11,19 @@ import type {
   ResponsesTransport,
 } from "~/lib/types/responses"
 
-import { COMPACT_REQUEST, type CompactType } from "~/lib/compact"
+import { COMPACT_REQUEST, type CompactType } from "~/lib/http/compact"
 import {
   getModelResponsesApiCompactThreshold as getConfiguredModelResponsesApiCompactThreshold,
   isContextManagementEnabledForMessages as isConfiguredContextManagementEnabledForMessages,
   isContextManagementEnabledForResponses as isConfiguredContextManagementEnabledForResponses,
   isGpt56OrAbove,
   isResponsesApiWebSocketEnabled as isConfiguredResponsesApiWebSocketEnabled,
+  supportsAllTurnsReasoningContext,
 } from "~/lib/config"
 import {
   resolveSupportedReasoningEffort,
   type ResponsesReasoningEffort,
-} from "~/lib/reasoning-effort"
+} from "~/lib/catalog/reasoning-effort"
 
 import {
   decodeMessagesCompaction,
@@ -62,6 +63,21 @@ export const applyDefaultReasoningSummary = (
   if (payload.reasoning?.effort && payload.reasoning.summary === undefined) {
     payload.reasoning.summary = "auto"
   }
+}
+
+export const normalizeResponsesReasoningContext = (
+  payload: ResponsesPayload,
+): { from: "all_turns"; to: "auto" } | undefined => {
+  if (payload.reasoning?.context !== "all_turns") {
+    return undefined
+  }
+
+  if (supportsAllTurnsReasoningContext(payload.model)) {
+    return undefined
+  }
+
+  payload.reasoning.context = "auto"
+  return { from: "all_turns", to: "auto" }
 }
 
 export const responsesUtilsDependencies = {
@@ -517,7 +533,9 @@ const isContextManagementEnabledForSource = (
   return responsesUtilsDependencies.isContextManagementEnabledForResponses()
 }
 
-const hasTerminalCompactionTrigger = (payload: ResponsesPayload): boolean => {
+export const hasTerminalCompactionTrigger = (
+  payload: ResponsesPayload,
+): boolean => {
   const { input } = payload
   if (!Array.isArray(input) || input.length === 0) {
     return false
@@ -602,8 +620,12 @@ const containsVisionContent = (value: unknown): boolean => {
     return true
   }
 
-  if (Array.isArray(record.content)) {
-    return record.content.some((entry) => containsVisionContent(entry))
+  if (Array.isArray(record.content) && containsVisionContent(record.content)) {
+    return true
+  }
+
+  if (Array.isArray(record.output) && containsVisionContent(record.output)) {
+    return true
   }
 
   return false

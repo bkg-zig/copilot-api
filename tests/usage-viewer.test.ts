@@ -96,6 +96,50 @@ describe("usage viewer image model discovery", () => {
   )
 })
 
+describe("usage viewer external credential handling", () => {
+  test("uses the Copi session locally and sends credentials only to the configured external origin", async () => {
+    const html = await readUsageViewerPage()
+    const source = extractInlineFunctionRange(
+      html,
+      "        function parseCredential(value)",
+      "        function resolveUsageUrl(endpoint)",
+    )
+    const origin = "https://copi.example"
+    const viewer = runInNewContext(source + "\n({ buildRequestHeaders })", {
+      URL,
+      window: { location: { href: origin + "/usage-viewer", origin } },
+      endpointUrlInput: { value: "/usage" },
+      apiKeyInput: { value: "local-key-must-not-be-sent" },
+    }) as { buildRequestHeaders: (url?: string) => Record<string, string> }
+
+    expect(viewer.buildRequestHeaders(origin + "/token-usage")).toEqual({})
+    expect(
+      viewer.buildRequestHeaders("https://other.example/token-usage"),
+    ).toEqual({})
+
+    const externalOrigin = "https://gateway.example"
+    const endpointUrlInput = "https://gateway.example/proxy/v1/usage"
+    const externalViewer = runInNewContext(
+      source + "\n({ buildRequestHeaders })",
+      {
+        URL,
+        window: { location: { href: origin + "/usage-viewer", origin } },
+        endpointUrlInput: { value: endpointUrlInput },
+        apiKeyInput: { value: "x-api-key: external-key" },
+      },
+    ) as { buildRequestHeaders: (url?: string) => Record<string, string> }
+
+    expect(
+      externalViewer.buildRequestHeaders(
+        externalOrigin + "/proxy/v1/token-usage",
+      ),
+    ).toEqual({ "x-api-key": "external-key" })
+    expect(
+      externalViewer.buildRequestHeaders("https://other.example/token-usage"),
+    ).toEqual({})
+  })
+})
+
 describe("usage viewer period contract", () => {
   test("supports all periods in the selector and usage requests", async () => {
     const html = await readUsageViewerPage()
@@ -107,12 +151,12 @@ describe("usage viewer period contract", () => {
     ].map((match) => [match[1], match[2]])
 
     expect(options).toEqual([
-      ["today", "Today"],
-      ["this_week", "This week"],
-      ["last_7_days", "Last 7 days"],
-      ["this_month", "This month"],
-      ["last_30_days", "Last 30 days"],
-      ["lifetime", "Lifetime"],
+      ["today", "Heute"],
+      ["this_week", "Diese Woche"],
+      ["last_7_days", "Letzte 7 Tage"],
+      ["this_month", "Dieser Monat"],
+      ["last_30_days", "Letzte 30 Tage"],
+      ["lifetime", "Gesamter Zeitraum"],
     ])
 
     expect(html).toContain("if (VALID_PERIODS.has(value)) {")
@@ -126,15 +170,9 @@ describe("usage viewer period contract", () => {
     expect(html).toContain("tokenUsageTrendDay: null")
     expect(html).toContain('data-trend-day="${escapeHtml(day.date)}"')
     expect(html).not.toContain('data-trend-day="${day.date}"')
-    expect(html).toContain(
-      "fetchJson(buildTokenUsageSummaryUrl(usageUrl, period),",
-    )
-    expect(html).toContain(
-      "fetchJson(buildTokenUsageDailyUrl(usageUrl, period),",
-    )
-    expect(html).toContain(
-      "fetchJson(buildTokenUsageEventsUrl(usageUrl, period, page),",
-    )
+    expect(html).toContain("buildTokenUsageSummaryUrl(usageUrl, period)")
+    expect(html).toContain("buildTokenUsageDailyUrl(usageUrl, period)")
+    expect(html).toContain("buildTokenUsageEventsUrl(usageUrl, period, page)")
     expect(html).toContain(
       "buildTokenUsageEventsUrl(usageUrl, getSelectedPeriod(), page)",
     )

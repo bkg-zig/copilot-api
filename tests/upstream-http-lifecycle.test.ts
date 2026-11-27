@@ -7,7 +7,7 @@ import {
 import {
   UpstreamHeadersTimeoutError,
   UpstreamStreamInactivityTimeoutError,
-} from "~/lib/error"
+} from "~/lib/http/error"
 import { createResponsesHttpEventStream } from "~/services/responses-http"
 import { fetchUpstreamWithLifecycle } from "~/services/upstream-http"
 
@@ -34,6 +34,16 @@ test("upstream transport configuration validates positive integer limits", () =>
   })
 })
 
+test("the websocket pool defaults to 270 seconds and honors an explicit timeout", () => {
+  expect(
+    normalizeUpstreamTransportConfig(undefined).websocketPoolIdleTimeoutMs,
+  ).toBe(270_000)
+  expect(
+    normalizeUpstreamTransportConfig({ websocketPoolIdleTimeoutMs: 60_000 })
+      .websocketPoolIdleTimeoutMs,
+  ).toBe(60_000)
+})
+
 test("a client cancelled before dispatch does not call fetch", async () => {
   const fetchMock = mock(() => Promise.resolve(Response.json({ ok: true })))
   ;(globalThis as unknown as { fetch: typeof fetch }).fetch =
@@ -51,6 +61,75 @@ test("a client cancelled before dispatch does not call fetch", async () => {
     ),
   ).toHaveProperty("name", "AbortError")
   expect(fetchMock).not.toHaveBeenCalled()
+})
+
+test("an explicit upstream signal cancels a stalled headers request", async () => {
+  let upstreamSignal: AbortSignal | undefined
+  ;(globalThis as unknown as { fetch: typeof fetch }).fetch = mock(
+    (_input: string | URL | Request, init?: RequestInit) => {
+      upstreamSignal = init?.signal as AbortSignal
+      return new Promise<Response>((_resolve, reject) => {
+        upstreamSignal?.addEventListener(
+          "abort",
+          () =>
+            reject(
+              upstreamSignal?.reason instanceof Error ?
+                upstreamSignal.reason
+              : new Error("aborted"),
+            ),
+          { once: true },
+        )
+      })
+    },
+  ) as unknown as typeof fetch
+  const timeout = AbortSignal.timeout(5)
+
+  expect(
+    await getRejectedError(
+      fetchUpstreamWithLifecycle(
+        "https://upstream.example/models",
+        { method: "POST", signal: timeout },
+        lifecycleOptions(),
+      ),
+    ),
+  ).toHaveProperty("name", "TimeoutError")
+  expect(upstreamSignal?.aborted).toBe(true)
+})
+
+test("an explicit upstream signal cancels a stalled response body", async () => {
+  let bodyController: ReadableStreamDefaultController<Uint8Array> | undefined
+  let cancelledBodies = 0
+  let upstreamSignal: AbortSignal | undefined
+  ;(globalThis as unknown as { fetch: typeof fetch }).fetch = mock(
+    (_input: string | URL | Request, init?: RequestInit) => {
+      upstreamSignal = init?.signal as AbortSignal
+      return Promise.resolve(
+        new Response(
+          new ReadableStream<Uint8Array>({
+            start(controller) {
+              bodyController = controller
+            },
+            cancel() {
+              cancelledBodies += 1
+            },
+          }),
+        ),
+      )
+    },
+  ) as unknown as typeof fetch
+  const timeout = AbortSignal.timeout(5)
+  const response = await fetchUpstreamWithLifecycle(
+    "https://upstream.example/models",
+    { method: "POST", signal: timeout },
+    lifecycleOptions(),
+  )
+
+  expect(
+    await getRejectedError(response.body!.getReader().read()),
+  ).toHaveProperty("name", "TimeoutError")
+  expect(upstreamSignal?.aborted).toBe(true)
+  expect(cancelledBodies).toBe(1)
+  bodyController?.error(new Error("cancelled"))
 })
 
 test("client cancellation while awaiting headers does not abort upstream", async () => {

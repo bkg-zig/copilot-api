@@ -44,4 +44,8 @@ if [ "$#" -gt 0 ] && [ "$1" = "start" ]; then
   shift
 fi
 
+if [ "$check_home" = true ]; then
+  bun --use-system-ca run deploy/prepare-config.ts
+fi
+
 exec bun --use-system-ca run dist/main.js start "$@"

@@ -1,9 +1,12 @@
 import { beforeEach, describe, expect, spyOn, test } from "bun:test"
 import { Hono } from "hono"
 
-import { createAuthMiddleware, getIsolatedApiKeyId } from "~/lib/request-auth"
-import { apiKeyPolicyMiddleware } from "~/lib/api-key-policy"
-import { traceIdMiddleware } from "~/lib/trace"
+import {
+  createAuthMiddleware,
+  getIsolatedApiKeyId,
+} from "~/lib/auth/request-auth"
+import { apiKeyPolicyMiddleware } from "~/lib/auth/api-key-policy"
+import { traceIdMiddleware } from "~/lib/http/trace"
 import * as config from "~/lib/config"
 
 let regularApiKeys: Array<string>
@@ -115,6 +118,18 @@ describe("request auth middleware", () => {
     const response = await app.request("/models", {
       headers: {
         "x-api-key": "regular-key",
+      },
+    })
+
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({ ok: true, scope: "default" })
+  })
+
+  test("accepts x-goog-api-key header for protected non-admin routes", async () => {
+    const app = createApp()
+    const response = await app.request("/models", {
+      headers: {
+        "x-goog-api-key": "regular-key",
       },
     })
 

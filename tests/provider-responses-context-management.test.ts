@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test"
 import { Hono } from "hono"
 
 import type { ResolvedProviderConfig } from "~/lib/config"
-import { installModelsDevCatalog } from "~/lib/models-dev-cache"
+import { installModelsDevCatalog } from "~/lib/catalog/models-dev-cache"
 import { state } from "~/lib/state"
 import type { ResponsesPayload, ResponsesResult } from "~/lib/types/responses"
 import { encodeMessagesCompaction } from "~/routes/responses/messages-translation"
@@ -321,6 +321,77 @@ describe("provider Responses reasoning summary defaults", () => {
       },
     )
   }
+})
+
+describe("provider Responses reasoning context normalization", () => {
+  test.each<{
+    label: string
+    path: string
+    model: string
+    reasoning: ResponsesPayload["reasoning"]
+    expectedReasoning: ResponsesPayload["reasoning"]
+  }>([
+    {
+      label: "downgrades all_turns to auto for gpt-5.3-codex via /v1/responses",
+      path: "/v1/responses",
+      model: "openai/gpt-5.3-codex",
+      reasoning: { effort: "high", context: "all_turns" },
+      expectedReasoning: { effort: "high", context: "auto", summary: "auto" },
+    },
+    {
+      label:
+        "downgrades all_turns to auto for gpt-5.3-codex via /:provider/v1/responses",
+      path: "/openai/v1/responses",
+      model: "gpt-5.3-codex",
+      reasoning: { effort: "high", context: "all_turns" },
+      expectedReasoning: { effort: "high", context: "auto", summary: "auto" },
+    },
+    {
+      label: "preserves all_turns for gpt-5.6 via /v1/responses",
+      path: "/v1/responses",
+      model: "openai/gpt-5.6",
+      reasoning: { effort: "high", context: "all_turns" },
+      expectedReasoning: {
+        effort: "high",
+        context: "all_turns",
+        summary: "auto",
+      },
+    },
+    {
+      label: "preserves current_turn for gpt-5.3-codex",
+      path: "/openai/v1/responses",
+      model: "gpt-5.3-codex",
+      reasoning: { effort: "high", context: "current_turn" },
+      expectedReasoning: {
+        effort: "high",
+        context: "current_turn",
+        summary: "auto",
+      },
+    },
+  ])("$label", async ({ expectedReasoning, model, path, reasoning }) => {
+    fetchMock.mockImplementation((_url, init) => {
+      const body = parseJsonRequestBody(init?.body) as ResponsesPayload
+      return Promise.resolve(Response.json(createResponsesResult(body.model)))
+    })
+
+    const response = await createApp().request(path, {
+      body: JSON.stringify({
+        input: "hello",
+        model,
+        reasoning,
+      }),
+      headers: { "content-type": "application/json" },
+      method: "POST",
+    })
+    await response.text()
+
+    expect(response.status).toBe(200)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    const body = parseJsonRequestBody(
+      fetchMock.mock.calls[0][1]?.body,
+    ) as ResponsesPayload
+    expect(body.reasoning).toEqual(expectedReasoning)
+  })
 })
 
 describe("Codex task title model routing on provider Responses", () => {
@@ -778,6 +849,85 @@ describe("provider Responses context management", () => {
       state.codexAccessToken = originalCodexAccessToken
       state.codexAccountId = originalCodexAccountId
     }
+  })
+
+  test("closes an unterminated provider Responses stream with response.failed", async () => {
+    const created = {
+      response: createResponsesResult("gpt-test"),
+      sequence_number: 0,
+      type: "response.created",
+    }
+    fetchMock.mockImplementation(() =>
+      Promise.resolve(
+        new Response(
+          `event: response.created\ndata: ${JSON.stringify(created)}\n\n`,
+          {
+            headers: { "content-type": "text/event-stream" },
+            status: 200,
+          },
+        ),
+      ),
+    )
+
+    const response = await createApp().request("/openai/v1/responses", {
+      body: JSON.stringify({ input: "hello", model: "gpt-test", stream: true }),
+      headers: { "content-type": "application/json" },
+      method: "POST",
+    })
+
+    expect(response.status).toBe(200)
+    const events = (await response.text())
+      .split("\n")
+      .filter((line) => line.startsWith("data: "))
+      .map((line) => JSON.parse(line.slice(6)) as { type: string })
+    expect(events.map((event) => event.type)).toEqual([
+      "response.created",
+      "response.failed",
+    ])
+  })
+
+  test("filters unsafe headers on initial provider Responses stream error events", async () => {
+    const errorEvent = {
+      code: "rate_limit",
+      error: { code: "rate_limit", message: "Too many requests" },
+      headers: {
+        connection: "keep-alive",
+        "proxy-authenticate": "Basic",
+        "retry-after": "5",
+        "set-cookie": "upstream-session=secret; Path=/",
+        "transfer-encoding": "chunked",
+        "x-models-etag": 'W/"etag"',
+        "x-request-id": "req-err-1",
+      },
+      message: "Too many requests",
+      param: null,
+      sequence_number: 0,
+      status_code: 429,
+      type: "error",
+    }
+    fetchMock.mockImplementation(() =>
+      Promise.resolve(
+        new Response(`event: error\ndata: ${JSON.stringify(errorEvent)}\n\n`, {
+          headers: { "content-type": "text/event-stream" },
+          status: 200,
+        }),
+      ),
+    )
+
+    const response = await createApp().request("/openai/v1/responses", {
+      body: JSON.stringify({ input: "hello", model: "gpt-test", stream: true }),
+      headers: { "content-type": "application/json" },
+      method: "POST",
+    })
+
+    expect(response.status).toBe(429)
+    expect(response.headers.get("retry-after")).toBe("5")
+    expect(response.headers.get("x-request-id")).toBe("req-err-1")
+    expect(response.headers.get("set-cookie")).toBeNull()
+    expect(response.headers.get("proxy-authenticate")).toBeNull()
+    expect(response.headers.get("x-models-etag")).toBeNull()
+    expect(response.headers.has("connection")).toBe(false)
+    expect(response.headers.has("transfer-encoding")).toBe(false)
   })
 
   test("keeps codex-prefixed provider models on the native Responses route for Codex clients", async () => {
