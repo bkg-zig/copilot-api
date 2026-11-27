@@ -1,13 +1,13 @@
 import type { Cost, CostTier, Limit, ModelCost } from "@opencode-ai/models"
 import type { Context } from "hono"
 
-import { builtinProviderModelRegistry } from "~/lib/builtin-provider-models"
+import { builtinProviderModelRegistry } from "~/lib/catalog/builtin-provider-models"
 import { getRawProviderConfig } from "~/lib/config"
-import { getOpencodeModelContextWindow } from "~/lib/config-store"
-import { GITHUB_COPILOT_PROVIDER } from "~/lib/github-copilot-provider"
-import { stripInternalRequestHeaders } from "~/lib/internal-headers"
-import { resolveModelPdfSupport } from "~/lib/model-pdf-support"
-import { findEndpointModel } from "~/lib/models"
+import { getOpencodeModelContextWindow } from "~/lib/config/config-store"
+import { GITHUB_COPILOT_PROVIDER } from "~/lib/providers/github-copilot-provider"
+import { stripInternalRequestHeaders } from "~/lib/http/internal-headers"
+import { resolveModelPdfSupport } from "~/lib/catalog/model-pdf-support"
+import { findEndpointModel } from "~/lib/catalog/models"
 import type { Reasoning } from "~/lib/types/responses"
 import {
   resolveProviderCurrency,
@@ -237,7 +237,10 @@ function toOpencodeModel(
 export async function handleOpencodeModels(c: Context): Promise<Response> {
   const models = await getAgentModels(
     stripInternalRequestHeaders(c.req.raw.headers),
-    { includeImageModels: true },
+    {
+      includeImageModels: true,
+      healthInitialWaitMs: c.req.query("wait") === "0" ? 0 : undefined,
+    },
   )
   const contextWindow = getOpencodeModelContextWindow()
   c.header("Cache-Control", "private, no-store")

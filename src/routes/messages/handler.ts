@@ -2,8 +2,8 @@ import type { Context } from "hono"
 
 import type { Model } from "~/lib/types/models"
 
-import { COMPACT_REQUEST } from "~/lib/compact"
-import { setPluginRequestModel } from "~/lib/request-events"
+import { COMPACT_REQUEST } from "~/lib/http/compact"
+import { setPluginRequestModel } from "~/lib/http/request-events"
 import {
   getClaudeAutoModel,
   getSmallModel,
@@ -11,12 +11,13 @@ import {
   resolveMappedModel,
 } from "~/lib/config"
 import { createHandlerLogger, debugJson } from "~/lib/logger"
-import { fromClaudeDiscoveryModelId } from "~/lib/claude-models"
-import { findEndpointModel } from "~/lib/models"
-import { resolveConfiguredProviderModelAlias } from "~/lib/provider-resolver"
+import { fromClaudeDiscoveryModelId } from "~/lib/catalog/claude-models"
+import { findEndpointModel } from "~/lib/catalog/models"
+import { resolveConfiguredProviderModelAlias } from "~/lib/providers/provider-resolver"
+import { resolveRoutedModel } from "~/lib/router-runtime"
 import { state } from "~/lib/state"
-import { requestContext } from "~/lib/request-context"
-import type { SubagentMarker } from "~/lib/subagent"
+import { requestContext } from "~/lib/http/request-context"
+import type { SubagentMarker } from "~/lib/http/subagent"
 import type { TokenUsageEndpoint } from "~/lib/token-usage"
 import {
   generateRequestIdFromPayload,
@@ -69,6 +70,7 @@ export async function handleCompletion(c: Context) {
 
 export interface CompletionPayloadOptions {
   compactType?: ReturnType<typeof getCompactType>
+  forwardStructuredOutput?: boolean
   skipClaudeAutoModel?: boolean
   skipModelMapping?: boolean
   skipWebSearch?: boolean
@@ -85,7 +87,9 @@ export async function handleCompletionPayload(
 ) {
   const requestedModel = anthropicPayload.model
   if (!dispatchOptions.skipModelMapping) {
-    anthropicPayload.model = resolveMappedModel(anthropicPayload.model)
+    anthropicPayload.model = resolveMappedModel(
+      resolveRoutedModel(anthropicPayload.model, anthropicPayload),
+    )
   }
   if (anthropicPayload.model !== requestedModel) {
     consola.debug(
@@ -97,7 +101,11 @@ export async function handleCompletionPayload(
     const webSearchResult = await tryHandleWebSearch(c, anthropicPayload, {
       logger,
       forwardToProvider: (ctx, payload, provider) =>
-        handleProviderMessagesForProvider(ctx, { payload, provider }),
+        handleProviderMessagesForProvider(ctx, {
+          payload,
+          provider,
+          usageEndpoint: dispatchOptions.usageEndpoint,
+        }),
     })
     if (webSearchResult) return webSearchResult
   }
@@ -105,8 +113,8 @@ export async function handleCompletionPayload(
   const claudeAutoModel = getClaudeAutoModel(true)
   const shouldUseClaudeAutoModel = Boolean(
     !dispatchOptions.skipClaudeAutoModel
-      && claudeAutoModel
-      && isClaudeAutoModelRequest(anthropicPayload),
+    && claudeAutoModel
+    && isClaudeAutoModelRequest(anthropicPayload),
   )
   if (claudeAutoModel && shouldUseClaudeAutoModel) {
     const resolvedClaudeAutoModel =
@@ -128,6 +136,7 @@ export async function handleCompletionPayload(
     return await handleProviderMessagesForProvider(c, {
       payload: anthropicPayload,
       provider: providerModelAlias.provider,
+      forwardStructuredOutput: dispatchOptions.forwardStructuredOutput,
       usageEndpoint: dispatchOptions.usageEndpoint,
     })
   }
@@ -217,6 +226,7 @@ export async function handleCompletionPayload(
         sessionId,
         compactType,
         logger,
+        forwardStructuredOutput: dispatchOptions.forwardStructuredOutput,
         usageEndpoint: dispatchOptions.usageEndpoint,
       },
     )
@@ -233,6 +243,7 @@ export async function handleCompletionPayload(
         sessionId,
         compactType,
         logger,
+        forwardStructuredOutput: dispatchOptions.forwardStructuredOutput,
         usageEndpoint: dispatchOptions.usageEndpoint,
       },
     )
@@ -248,6 +259,7 @@ export async function handleCompletionPayload(
       sessionId,
       compactType,
       logger,
+      forwardStructuredOutput: dispatchOptions.forwardStructuredOutput,
       usageEndpoint: dispatchOptions.usageEndpoint,
     },
   )

@@ -2,8 +2,6 @@ import { beforeEach, describe, expect, mock, test } from "bun:test"
 
 import type { ResolvedProviderConfig } from "~/lib/config"
 
-const actualConfigModule = await import("~/lib/config")
-
 let azureModuleImports = 0
 let credentialInstances = 0
 let tokenProviderFactories = 0
@@ -26,18 +24,15 @@ const basicProviderConfig: ResolvedProviderConfig = {
   type: "anthropic",
 }
 
-await mock.module("~/lib/config", () => ({
-  ...actualConfigModule,
-  getProviderConfig: (name: string) => {
-    if (name === "foundry") {
-      return entraProviderConfig
-    }
-    if (name === "basic") {
-      return basicProviderConfig
-    }
-    return null
-  },
-}))
+function stubGetProviderConfig(name: string): ResolvedProviderConfig | null {
+  if (name === "foundry") {
+    return entraProviderConfig
+  }
+  if (name === "basic") {
+    return basicProviderConfig
+  }
+  return null
+}
 
 await mock.module("@azure/identity", () => {
   azureModuleImports += 1
@@ -59,7 +54,12 @@ await mock.module("@azure/identity", () => {
   }
 })
 
-const { resolveProviderConfig } = await import("~/lib/provider-resolver")
+const { resolveProviderConfig } = await import(
+  "~/lib/providers/provider-resolver"
+)
+
+const resolveWithStub = (name: string) =>
+  resolveProviderConfig(name, undefined, stubGetProviderConfig)
 
 const credentialInstancesAfterImport = credentialInstances
 const tokenProviderFactoriesAfterImport = tokenProviderFactories
@@ -74,9 +74,9 @@ describe("provider resolver azure-entra", () => {
     expect(credentialInstancesAfterImport).toBe(0)
     expect(tokenProviderFactoriesAfterImport).toBe(0)
 
-    expect(await resolveProviderConfig("basic")).toEqual(basicProviderConfig)
-    expect(await resolveProviderConfig("missing")).toBeNull()
-    expect(await resolveProviderConfig("   ")).toBeNull()
+    expect(await resolveWithStub("basic")).toEqual(basicProviderConfig)
+    expect(await resolveWithStub("missing")).toBeNull()
+    expect(await resolveWithStub("   ")).toBeNull()
 
     expect(credentialInstances).toBe(0)
     expect(tokenProviderFactories).toBe(0)
@@ -84,8 +84,8 @@ describe("provider resolver azure-entra", () => {
   })
 
   test("reuses a single credential across entra resolutions", async () => {
-    const first = await resolveProviderConfig("foundry")
-    const second = await resolveProviderConfig("foundry")
+    const first = await resolveWithStub("foundry")
+    const second = await resolveWithStub("foundry")
 
     expect(first).toMatchObject({
       apiKey: "entra-access-token",
@@ -104,7 +104,7 @@ describe("provider resolver azure-entra", () => {
 
     let error: unknown = null
     try {
-      await resolveProviderConfig("foundry")
+      await resolveWithStub("foundry")
     } catch (resolveError) {
       error = resolveError
     }

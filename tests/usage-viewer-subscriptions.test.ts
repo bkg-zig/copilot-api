@@ -391,14 +391,20 @@ const xai: SubscriptionUsage = {
   windows: [],
   limitReached: false,
 }
+const anthropic: SubscriptionUsage = {
+  provider: "anthropic",
+  windows: [],
+  limitReached: false,
+}
 
 describe("web subscription quota fetching", () => {
-  test("loads all four subscriptions independently and preserves gateway prefixes", async () => {
+  test("loads all subscriptions independently and preserves gateway prefixes", async () => {
     const h = createFetcher()
     const done = h.viewer.fetchSubscriptionQuotas(h.endpointUrlInput.value)
     expect(h.pending.map((request) => request.url)).toEqual([
       "http://gateway/prefix/usage/github-copilot",
       "http://gateway/prefix/usage/codex",
+      "http://gateway/prefix/usage/anthropic",
       "http://gateway/prefix/usage/xai",
       "http://gateway/prefix/usage/opencode-go",
     ])
@@ -408,13 +414,15 @@ describe("web subscription quota fetching", () => {
     expect(h.state.isSubscriptionsLoading).toBe(true)
     expect(h.renderCount()).toBeGreaterThan(1)
     h.pending[0].resolve(copilot)
-    h.pending[2].reject(
+    h.pending[3].reject(
       Object.assign(new Error("upstream failed"), { status: 502 }),
     )
-    h.pending[3].resolve(go)
+    h.pending[2].resolve(anthropic)
+    h.pending[4].resolve(go)
     await done
     expect(h.state.subscriptionUsageErrors.xai).toBe(true)
     expect(h.state.subscriptionUsage.codex).toEqual(business)
+    expect(h.state.subscriptionUsage.anthropic).toEqual(anthropic)
     expect(h.state.subscriptionUsage["opencode-go"]).toEqual(go)
     expect(h.state.isSubscriptionsLoading).toBe(false)
   })
@@ -436,15 +444,17 @@ describe("web subscription quota fetching", () => {
     const old = h.viewer.fetchSubscriptionQuotas(h.endpointUrlInput.value)
     h.endpointUrlInput.value = "http://other/usage"
     const current = h.viewer.fetchSubscriptionQuotas(h.endpointUrlInput.value)
-    h.pending[4].resolve(copilot)
-    h.pending[5].resolve(business)
-    h.pending[6].resolve(xai)
-    h.pending[7].resolve(go)
+    h.pending[5].resolve(copilot)
+    h.pending[6].resolve(business)
+    h.pending[7].resolve(anthropic)
+    h.pending[8].resolve(xai)
+    h.pending[9].resolve(go)
     await current
     h.pending[0].reject(new Error("old error"))
     h.pending[1].resolve({ ...business, planType: "old" })
-    h.pending[2].resolve({ ...xai, planType: "old" })
-    h.pending[3].resolve({ ...go, planType: "old" })
+    h.pending[2].resolve({ ...anthropic, planType: "old" })
+    h.pending[3].resolve({ ...xai, planType: "old" })
+    h.pending[4].resolve({ ...go, planType: "old" })
     await old
     expect(h.state.subscriptionUsageErrors).toEqual({})
     expect(h.state.subscriptionUsage.codex.planType).toBe("business")
@@ -509,12 +519,14 @@ describe("web subscription quota fetching", () => {
     const done = h.viewer.refreshSubscriptionQuotas()
     h.pending[0].resolve(null)
     h.pending[1].resolve({ provider: "codex", windows: null })
-    h.pending[2].resolve({ provider: "other", windows: [] })
-    h.pending[3].resolve({ provider: "opencode-go", windows: null })
+    h.pending[2].resolve({ provider: "anthropic", windows: null })
+    h.pending[3].resolve({ provider: "other", windows: [] })
+    h.pending[4].resolve({ provider: "opencode-go", windows: null })
     await done
     expect(h.state.subscriptionUsageErrors).toEqual({
       "github-copilot": true,
       codex: true,
+      anthropic: true,
       xai: true,
       "opencode-go": true,
     })

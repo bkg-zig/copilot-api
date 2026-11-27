@@ -10,6 +10,7 @@
 - **Admin 路由：** 所有 `/admin/*` 路由都要求 `auth.adminApiKey`。如果缺失，服务会在启动时自动生成并在开始提供服务前写回 `config.json`。
 - **允许的认证头：**
   - `x-api-key: <your_key>`
+  - `x-goog-api-key: <your_key>`
   - `Authorization: Bearer <your_key>`
 - **CORS 预检：** `OPTIONS` 请求始终允许。
 - **未配置普通 key 时：** 普通路由仍可直接访问；但这条规则不适用于 `/admin/*`，后者只接受 `auth.adminApiKey`。
@@ -127,6 +128,21 @@ xAI 接受任务后，提交接口立即返回。通过网关 API Key 提交的�
 
 Token 计数回退到本地估算时，不会把图片的 URL 或 Base64 当作文本计数：`low` 细节的基础估值为每张 85 tokens，`high`、`auto` 或未指定细节为每张 765 tokens，之后应用已配置的模型倍率。实际用量取决于上游模型和图片尺寸，以响应中的 usage 为准。
 
+### Google Gemini 兼容端点
+
+这些端点提供面向 Gemini 4+ / GenAI 客户端的 REST 兼容接口。目标为已配置的 `type: "google"` provider（含模型级 `type: "google"` 覆盖）时原生透传；其余 GitHub Copilot 与第三方 provider 模型通过 Messages API 枢纽双向转换，并保留 `thoughtSignature` 往返透传。用量记录在 `generate_content` 端点下。
+
+Gemini 请求使用小驼峰协议字段，例如 `generationConfig` 和 `inlineData`。
+
+| 端点 | 方法 | 说明 |
+| --- | --- | --- |
+| `GET /v1beta/models` | `GET` | 以 Google `models/<id>` 格式列出可用网关模型。支持多个思考档位的模型只列出 `-high` 等变体，用变体 ID 调用时会选择原模型的对应档位。 |
+| `POST /v1beta/models/<model>:generateContent` | `POST` | 生成非流式 Gemini 响应。支持 `provider/model` 别名与模型映射。 |
+| `POST /v1beta/models/<model>:streamGenerateContent` | `POST` | 生成流式 Gemini 响应，支持 SSE（`?alt=sse`）或 JSON 数组格式。 |
+| `POST /v1beta:<action>` | `POST` | 以 `{}` 应答 Antigravity / GenAI 遥测请求。 |
+
+Gemini 目录遵循各 provider 的 `agentsModels` 设置，并可为入选且同时接受图片和 PDF 的模型生成 `my-gemini-` 别名。推理时，网关会将别名还原为原模型，并应用 ID 中选定的思考档位。
+
 ### 使用量监控端点
 
 用于监控 Copilot 用量与额度的新端点。
@@ -174,4 +190,4 @@ OpenCode Go 使用已配置的 provider API key 和 base URL 查询 `GET /v1/usa
 
 内置 Codex 和 GitHub Copilot provider 的流式请求走上游 WebSocket 时，可复用同一连接上最近一次完整成功的 response，或受支持的中断检查点。优先使用不透明锚点：思考项的 `encrypted_content`，或工具调用的类型及 `call_id`。只有响应没有可用的不透明锚点，且最后一项为非空纯文本助手消息时，才使用该消息文本的 SHA-256 hash 兜底。锚点以 `response.output_item.done` 为准；终态输出只补齐缺失项。下轮请求仍从 input 尾部向前匹配不透明锚点；文本锚点只比较最后一条 `role: "assistant"` 消息，不向更早的文本查找。字符串和文本块统一为相同文本后比较，不去除空白。匹配成功后，跳过紧接着的助手内容，从下一条非助手内容（如用户消息或客户端工具结果）开始发送增量，并带上 `previous_response_id`。不保存助手文本或 item 数量，只保存 response ID、对应锚点和最新 input 压缩检查点的 hash。客户端可以使用 HTTP 接入；该优化仅作用于上游 WebSocket，走 HTTP 上游的请求保持原样。
 
-锚点缺失或不匹配、没有新增 input、重新连接或压缩检查点变化时，均发送完整 input。最新完整响应没有可用锚点时，会清除旧检查点。中断响应只有在 `status` 为 `incomplete` 且 `incomplete_details.reason` 为 `interrupted` 时，才可保存自身的 ID 和锚点。锚点不校验更早的历史；修改或重排历史后，需要显式传入 `previous_response_id: null` 或新建会话。自动续接 ID 被拒绝且尚未向客户端转发 response 事件时，最多用完整 input 重试一次；客户端显式传入的 response ID 保持不变。参见 [OpenAI WebSocket 续接协议](https://developers.openai.com/api/docs/guides/websocket-mode#how-continuation-works)。
+锚点缺失或不匹配、没有新增 input、重新连接或压缩检查点变化时，均发送完整 input。最新完整响应没有可用锚点时，会清除旧检查点。客户端未收到的响应（例如已取消、但仍在该连接上完成的请求），或因中断以外的原因以 `incomplete` 结束的响应，同样会清除旧检查点，因为只能从该连接上最新的 response 续接。中断响应只有在 `status` 为 `incomplete` 且 `incomplete_details.reason` 为 `interrupted` 时，才可保存自身的 ID 和锚点。锚点不校验更早的历史；修改或重排历史后，需要显式传入 `previous_response_id: null` 或新建会话。自动续接 ID 被拒绝且尚未向客户端转发 response 事件时，最多用完整 input 重试一次；客户端显式传入的 response ID 保持不变。参见 [OpenAI WebSocket 续接协议](https://developers.openai.com/api/docs/guides/websocket-mode#how-continuation-works)。

@@ -13,13 +13,13 @@ import os from "node:os"
 import path from "node:path"
 
 import type { ResolvedProviderConfig } from "~/lib/config"
-import { fromClaudeDiscoveryModelId } from "~/lib/claude-models"
-import { CODEX_MODEL_CATALOG_MAX_BYTES } from "~/lib/codex-model-catalog"
-import { installModelsDevCatalog } from "~/lib/models-dev-cache"
-import { PATHS } from "~/lib/paths"
-import { defaultConfig, invalidateConfigCache } from "~/lib/config-store"
+import { fromClaudeDiscoveryModelId } from "~/lib/catalog/claude-models"
+import { CODEX_MODEL_CATALOG_MAX_BYTES } from "~/lib/catalog/codex-model-catalog"
+import { installModelsDevCatalog } from "~/lib/catalog/models-dev-cache"
+import { PATHS } from "~/lib/storage/paths"
+import { defaultConfig, invalidateConfigCache } from "~/lib/config/config-store"
 import type { ModelsResponse } from "~/lib/types/models"
-import type { CodexModelsResponse } from "~/routes/models/codex-models-types"
+import type { CodexModelsResponse } from "~/lib/types/codex-models"
 import {
   isOpencodeUserAgent,
   type OpencodeModel,
@@ -33,7 +33,7 @@ import {
 } from "./fixtures/models-dev-catalog"
 
 const actualConfigModule = await import("~/lib/config")
-const actualTokenModule = await import("~/lib/token")
+const actualTokenModule = await import("~/lib/auth/token")
 
 let enabledProviders: Array<string> = []
 let providerConfigs: Record<
@@ -82,7 +82,7 @@ await mock.module("~/lib/config", () => ({
   listEnabledProviders: () => enabledProviders,
 }))
 
-await mock.module("~/lib/token", () => ({
+await mock.module("~/lib/auth/token", () => ({
   ...actualTokenModule,
   setupCodexToken: () => {
     if (codexSetupError) return Promise.reject(codexSetupError)
@@ -91,6 +91,7 @@ await mock.module("~/lib/token", () => ({
 }))
 
 const { state } = await import("~/lib/state")
+const { googleRoutes } = await import("~/routes/google/route")
 const { modelRoutes } = await import("~/routes/models/route")
 const { providerModelRoutes } = await import("~/routes/provider/models/route")
 
@@ -345,6 +346,37 @@ afterEach(() => {
 })
 
 describe("model routes", () => {
+  test("filters Gemini discovery using Copilot's upstream and client model IDs", async () => {
+    state.models = createCopilotModels([
+      "claude-haiku-8.5",
+      "claude-sonnet-8.6",
+      "enterprise/chat",
+      "gpt-unselected",
+    ])
+    providerConfigs["github-copilot"] = {
+      ...createProviderConfig("github-copilot", "https://unused.test"),
+      agentsModels: [
+        "claude-haiku-8.5",
+        "claude-sonnet-8-6",
+        "enterprise/chat",
+      ],
+    }
+    const app = new Hono().route("/v1beta/models", googleRoutes)
+    const response = await app.request("/v1beta/models")
+    expect(response.status).toBe(200)
+    const { models } = (await response.json()) as {
+      models: Array<{ name: string }>
+    }
+    expect(models.map(({ name }) => name)).toEqual([
+      "models/claude-haiku-8-5",
+      "models/claude-sonnet-8-6",
+      "models/enterprise/chat",
+    ])
+    expect(await getDiscoveredModelIds("/v1/models", "curl/8.0")).toContain(
+      "gpt-unselected",
+    )
+  })
+
   test.each(["curl/8.0", "opencode/2.0"])(
     "adds the missing Copilot image model for %s without querying upstream",
     async (userAgent) => {

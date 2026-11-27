@@ -1,8 +1,5 @@
 export type SubscriptionProvider =
-  | "github-copilot"
-  | "codex"
-  | "xai"
-  | "opencode-go"
+  "github-copilot" | "codex" | "xai" | "anthropic" | "opencode-go"
 
 export interface SubscriptionQuotaWindow {
   id: string

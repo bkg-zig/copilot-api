@@ -1,135 +1,165 @@
 services:
   data-init:
-    image: ghcr.io/caozhiyuan/copilot-api:latest
-    pull_policy: always
+    image: bkg-copilot-api:local
     user: "0:0"
     entrypoint: ["/bin/sh", "-c"]
     environment:
-      DATA_SRC: ${COPILOT_API_DATA_DIR:-./copilot-data}
+      DATA_SRC: /data
     command:
       - |
         set -eu
         src="$${DATA_SRC:-}"
-        # Normalize the host path before the safety check: collapse repeated
-        # leading slashes (//etc -> /etc) and strip trailing slashes and
-        # trailing /. (/etc/ -> /etc), so the exact-match blocklist cannot
-        # be bypassed by an equivalent spelling.
-        while :; do
-          case "$$src" in
-            //*) src=/$${src#//} ;;
-            */) src=$${src%/} ;;
-            */.) src=$${src%/.} ;;
-            *) break ;;
-          esac
-        done
-        [ -z "$$src" ] && src=/
         case "$$src" in
-          "/"|"/root"|"/home"|"/etc"|"/var"|"/usr"|"/bin"|"/sbin")
-            echo "refusing unsafe COPILOT_API_DATA_DIR: $$DATA_SRC" >&2
+          ""|"/"|"/root"|"/home"|"/etc"|"/var"|"/usr"|"/bin"|"/sbin")
+            echo "refusing unsafe COPILOT_API_DATA_DIR: $$src" >&2
             exit 1
             ;;
         esac
-        # A gateway data directory never contains system directories. Refuse
-        # mounts that resolve to a filesystem root, which the literal path
-        # check above cannot see through (for example `/etc/..` or a symlink
-        # pointing at `/`).
-        for marker in boot dev etc home lib proc root sbin sys usr var; do
-          if [ -e "/data/$$marker" ]; then
-            echo "refusing to use $$DATA_SRC: /data contains /$$marker, so the mount looks like a system root" >&2
-            exit 1
-          fi
-        done
-        mkdir -p /data/cache
-        chmod 700 /data
-        chown bun:bun /data
-        # Repair ownership for the gateway's own state only. A mistyped
-        # COPILOT_API_DATA_DIR must never rewrite unrelated files, so the
-        # gateway's paths are matched explicitly instead of walking the whole
-        # mount.
-        fix_state_permissions() {
-          for entry in \
-            cache \
-            logs \
-            codex_credentials.json \
-            config.json \
-            copilot-api.sqlite \
-            copilot-api.sqlite-journal \
-            copilot-api.sqlite-shm \
-            copilot-api.sqlite-wal \
-            desktop-config.json
-          do
-            if [ -e "/data/$$entry" ]; then
-              chown -R bun:bun "/data/$$entry"
-            fi
-          done
-
-          # The token file name is dynamic: `github_token`, or
-          # `ent_github_token` when COPILOT_API_ENTERPRISE_URL is set, and it
-          # can live in an OAuth app subdirectory such as
-          # `opencode/github_token`. Match the name suffix so neither the
-          # enterprise prefix nor the app directory can be missed.
-          for token in /data/*github_token /data/*/*github_token; do
-            if [ -f "$$token" ]; then
-              chown bun:bun "$$(dirname "$$token")"
-              chown bun:bun "$$token"
-            fi
-          done
-
-          return 0
-        }
-        fix_state_permissions
+        mkdir -p "$$src/cache"
+        chmod 700 "$$src"
+        chown -R bun:bun "$$src"
     network_mode: none
     read_only: true
-    cap_drop:
-      - ALL
-    cap_add:
-      - CHOWN
-      - DAC_OVERRIDE
-      - FOWNER
-    security_opt:
-      - no-new-privileges:true
+    cap_drop: [ALL]
+    cap_add: [CHOWN, DAC_OVERRIDE, FOWNER]
+    security_opt: [no-new-privileges:true]
     volumes:
       - type: bind
-        source: ${COPILOT_API_DATA_DIR:-./copilot-data}
+        source: ${COPILOT_API_DATA_DIR:-/srv/bkg/data/copilot-api}
         target: /data
         bind:
           create_host_path: false
     restart: "no"
 
-  copilot-api:
-    image: ghcr.io/caozhiyuan/copilot-api:latest
-    pull_policy: always
+  # State owner: pgrust (mango) + pgvector. No host port and not on bkg_net;
+  # reachable only on the internal copilot_db network via copilot-postgres:5432.
+  # Image provenance: github.com/bkg-zig/pgrust, branch mango, pinned commit
+  # 5f1ec9bd6af679fd340ce80c710f08365dcd1604, build context bkg/docker/db
+  # (base malisper/pgrust:v0.4-beta). `docker compose build postgres` rebuilds
+  # exactly that commit; a normal `up` keeps using the local image.
+  postgres:
+    image: copilot-pgrust:mango
+    build:
+      context: https://github.com/bkg-zig/pgrust.git#5f1ec9bd6af679fd340ce80c710f08365dcd1604:bkg/docker/db
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    # read_only is deliberately not enabled: the image entrypoint writes its
+    # TLS certificate and generates a role-password SQL file during first init.
+    # A tmpfs over /docker-entrypoint-initdb.d hides the image's own 00-roles.sql
+    # and 01-extensions.sql, so initialization fails (verified in a probe).
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    cap_add: [CHOWN, DAC_OVERRIDE, FOWNER, SETUID, SETGID]
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      # `postgres` matches cron.database_name below. The image installs
+      # extensions in schema `extensions`; both migration mounts rely on the
+      # search_path public, extensions set by 001_agent_state.sql.
+      POSTGRES_DB: postgres
+      RUST_MIN_STACK: "33554432"
+    ulimits:
+      stack:
+        soft: 67108864
+        hard: 67108864
+    command:
+      - postgres
+      - -c
+      - config_file=/etc/postgresql/postgresql.conf
+      - -c
+      - cron.database_name=postgres
+    volumes:
+      - pgrust_data:/var/lib/postgresql/data
+      - type: bind
+        source: ./supabase/migrations/001_agent_state.sql
+        target: /docker-entrypoint-initdb.d/50-agent-state.sql
+        read_only: true
+      - type: bind
+        source: ./supabase/migrations/002_api_keys.sql
+        target: /docker-entrypoint-initdb.d/51-api-keys.sql
+        read_only: true
+        bind:
+          # Fail clearly instead of creating an empty migration when the
+          # backend branch has not been merged yet.
+          create_host_path: false
+    networks:
+      copilot_db:
+        aliases:
+          # bkg_net already publishes the name "postgres" for the shared server.
+          # The gateway is on both networks, so the state URL uses this alias.
+          - copilot-postgres
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  bkgcopilot-api:
+#    name: bkg-copilot-api
+    image: bkg-copilot-api:local
+    build:
+      context: .
+      dockerfile: Dockerfile
     user: bun
     depends_on:
       data-init:
         condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
     restart: unless-stopped
     read_only: true
-    cap_drop:
-      - ALL
-    security_opt:
-      - no-new-privileges:true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
     tmpfs:
       - /tmp:rw,nosuid,nodev,size=64m,mode=1777
     ports:
-      - "${COPILOT_API_BIND:-127.0.0.1}:${COPILOT_API_PORT:-4141}:4141"
+      - "127.0.0.1:4141:4141"
+    expose:
+      - "4141"
     environment:
       COPILOT_API_HOME: /data
-      COPILOT_API_SQLITE_DB_PATH: ${COPILOT_API_SQLITE_DB_PATH:-/data/copilot-api.sqlite}
-      COPILOT_API_ENTERPRISE_URL: ${COPILOT_API_ENTERPRISE_URL:-}
-      COPILOT_API_OAUTH_APP: ${COPILOT_API_OAUTH_APP:-}
-      XDG_CACHE_HOME: /data/cache
-      COPILOT_API_GITHUB_TOKEN: ${COPILOT_API_GITHUB_TOKEN:-${GH_TOKEN:-}}
-      HTTP_PROXY: ${HTTP_PROXY:-${http_proxy:-}}
-      HTTPS_PROXY: ${HTTPS_PROXY:-${https_proxy:-}}
-      ALL_PROXY: ${ALL_PROXY:-${all_proxy:-}}
-      NO_PROXY: ${NO_PROXY:-${no_proxy:-127.0.0.1,localhost,::1}}
+      COPILOT_API_SQLITE_DB_PATH: /data/copilot-api.sqlite
+      BKG_API_GLOBAL_URL_FILE: /run/secrets/api_global.url
+      BKG_API_GLOBAL_KEY_FILE: /run/secrets/api_global.key
+      BKG_OV_GATEWAY_KEY_FILE: /run/secrets/bkg-ov-client.key
+      SUPABASE_DB_URL: postgresql://postgres:${POSTGRES_PASSWORD:-postgres}@copilot-postgres:5432/postgres
     volumes:
       - type: bind
-        source: ${COPILOT_API_DATA_DIR:-./copilot-data}
+        source: ${COPILOT_API_DATA_DIR:-/srv/bkg/data/copilot-api}
         target: /data
         bind:
           create_host_path: false
+      - type: bind
+        source: /srv/bkg/core/api/api_global/api_eysho.url
+        target: /run/secrets/api_global.url
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: /srv/bkg/core/api/api_global/api_eysho.key
+        target: /run/secrets/api_global.key
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./.secrets/bkg-ov-client.key
+        target: /run/secrets/bkg-ov-client.key
+        read_only: true
+        bind:
+          create_host_path: false
+    networks:
+      bkg_net:
+        aliases:
+          - copilot-api
+      copilot_db: {}
+    labels:
+      - traefik.enable=false
     healthcheck:
       test: ["CMD", "wget", "--spider", "-q", "-T", "4", "-Y", "off", "http://127.0.0.1:4141/"]
       interval: 30s
@@ -141,3 +171,13 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
+
+networks:
+  bkg_net:
+    external: true
+    name: bkg_net
+  copilot_db:
+    internal: true
+
+volumes:
+  pgrust_data:
