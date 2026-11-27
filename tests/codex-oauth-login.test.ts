@@ -14,7 +14,7 @@ import {
   CodexOAuthError,
   type CodexCredentials,
   type LoginCodexOptions,
-} from "~/lib/oauth/codex"
+} from "~/lib/auth/oauth/codex"
 
 const originalFetch = globalThis.fetch
 const callbackBaseUrl = "http://127.0.0.1:1455"
@@ -110,6 +110,31 @@ describe("Codex browser authorization", () => {
     const init = exchange.mock.calls[0]?.[1]
     expect(init?.signal).toBe(signal)
     expect((init?.body as URLSearchParams).get("code")).toBe("test-code")
+  })
+
+  test("accepts a browser-pasted redirect URL immediately through the web callback hook", async () => {
+    const prompt = mock(() => Promise.resolve(""))
+    const { url, outcome } = await startLogin({
+      onPrompt: prompt,
+      onAuthorizationCode: (expectedState) =>
+        Promise.resolve(
+          `http://localhost:1455/auth/callback?state=${expectedState}&code=web-ui-code`,
+        ),
+    })
+    expect(url.searchParams.get("redirect_uri")).toBe(
+      "http://localhost:1455/auth/callback",
+    )
+    expect(await outcome).toMatchObject({
+      accessToken,
+      refreshToken: "test-refresh-token",
+      accountId: "acct_test",
+    })
+    expect(prompt).not.toHaveBeenCalled()
+    expect(
+      (exchange.mock.calls[0]?.[1]?.body as URLSearchParams).get("code"),
+    ).toBe("web-ui-code")
+    const close = await occupyCallbackPort()
+    await close()
   })
 
   test("ignores invalid callbacks and cancels without exchanging or prompting", async () => {

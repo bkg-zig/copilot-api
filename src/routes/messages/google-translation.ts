@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto"
 
-import { HTTPError } from "~/lib/error"
+import { HTTPError } from "~/lib/http/error"
 import type {
   AnthropicAssistantContentBlock,
   AnthropicMessagesPayload,
@@ -34,7 +34,7 @@ export function encodeGoogleSignature(
   )
 }
 
-function decodeGoogleSignature(
+export function decodeGoogleSignature(
   value: string,
 ): { signature: string; target: GoogleSignatureTarget } | undefined {
   if (!value.startsWith(GOOGLE_SIGNATURE_PREFIX)) return undefined

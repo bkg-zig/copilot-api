@@ -8,6 +8,7 @@
 - **Admin routes:** All `/admin/*` routes require `auth.adminApiKey`. If it is missing, the server generates one at startup and persists it to `config.json` before serving requests.
 - **Allowed auth headers:**
   - `x-api-key: <your_key>`
+  - `x-goog-api-key: <your_key>`
   - `Authorization: Bearer <your_key>`
 - **CORS preflight:** `OPTIONS` requests are always allowed.
 - **When no regular keys are configured:** Non-admin routes continue to allow requests. This does not apply to `/admin/*`, which only accepts `auth.adminApiKey`.
@@ -123,6 +124,21 @@ These endpoints are designed to be compatible with the Anthropic Messages API.
 
 When token counting falls back to local estimation, image URLs and Base64 data are not tokenized as text: each image has a base estimate of 85 tokens for `low` detail, or 765 tokens for `high`, `auto`, or unspecified detail, before any configured model multiplier. Actual usage depends on the upstream model and image dimensions; use the response usage for actual token counts.
 
+### Google Gemini Compatible Endpoints
+
+These endpoints expose the Gemini 4+ / GenAI REST surface. Requests targeting configured `type: "google"` providers (including per-model `type: "google"` overrides) pass through natively; all other Copilot and provider models translate bidirectionally through the Messages API hub while preserving `thoughtSignature` round-trips. Usage is recorded under the `generate_content` endpoint.
+
+Use lowerCamelCase for Gemini request fields such as `generationConfig` and `inlineData`.
+
+| Endpoint | Method | Description |
+| --- | --- | --- |
+| `GET /v1beta/models` | `GET` | Lists available gateway models in Google `models/<id>` format. Models with multiple reasoning levels are listed as variants such as `-high`. A variant selects that level on the base model. |
+| `POST /v1beta/models/<model>:generateContent` | `POST` | Generates a non-streaming Gemini response. Supports `provider/model` aliases and model mappings. |
+| `POST /v1beta/models/<model>:streamGenerateContent` | `POST` | Generates a streaming Gemini response as SSE (`?alt=sse`) or a JSON array. |
+| `POST /v1beta:<action>` | `POST` | Acknowledges Antigravity / GenAI telemetry pings with `{}`. |
+
+The Gemini catalog follows each provider's `agentsModels` selection. It can advertise a `my-gemini-` alias for a selected model that accepts both images and PDF files. Generation resolves that alias to the original model and applies any reasoning level selected in the ID.
+
 ### Usage Monitoring Endpoints
 
 Endpoints for monitoring subscription usage and quotas.
@@ -170,4 +186,4 @@ The reload endpoint requires no request body and returns `{ configPath, reloaded
 
 For the built-in Codex and GitHub Copilot providers, streamed requests using an upstream WebSocket may reuse the latest completed response or supported interrupted checkpoint on that same socket. The gateway prefers an opaque anchor: a reasoning item's `encrypted_content` or a tool call's type and `call_id`. If the response has no usable opaque anchor and ends with a nonempty text-only assistant message, it uses a SHA-256 hash of that message's text instead. Anchors come from `response.output_item.done`; terminal output fills only missing items. On the next request, opaque anchors are matched from the end of input as before; a text anchor is compared only with the last `role: "assistant"` message, without searching older text. String content and text blocks are normalized to the same text without trimming whitespace. After a match, subsequent assistant items are skipped and `previous_response_id` is sent with input starting at the next non-assistant item, such as a user message or client tool result. The gateway does not retain assistant text or item counts; it retains the response ID, its anchor, and the latest input compaction checkpoint hash. HTTP clients may use this optimization when their upstream transport is WebSocket; upstream HTTP requests are unchanged.
 
-Missing or mismatched anchors, no new input, reconnects, and changed compaction checkpoints send full input. A completed response without a usable anchor clears the older checkpoint. Interrupted responses may save their own ID and anchor only when `status` is `incomplete` and `incomplete_details.reason` is `interrupted`. Anchors do not verify earlier history: after editing or reordering history, explicitly send `previous_response_id: null` or start a new session. A rejected automatic response ID is retried once with full input before any response events have been forwarded. Client-supplied response IDs are left intact. See the [OpenAI WebSocket continuation contract](https://developers.openai.com/api/docs/guides/websocket-mode#how-continuation-works).
+Missing or mismatched anchors, no new input, reconnects, and changed compaction checkpoints send full input. A completed response without a usable anchor clears the older checkpoint. So does a response the client did not receive, such as a cancelled request that finished on the socket, or one that ended `incomplete` for a reason other than an interruption, because only the socket's latest response can be continued. Interrupted responses may save their own ID and anchor only when `status` is `incomplete` and `incomplete_details.reason` is `interrupted`. Anchors do not verify earlier history: after editing or reordering history, explicitly send `previous_response_id: null` or start a new session. A rejected automatic response ID is retried once with full input before any response events have been forwarded. Client-supplied response IDs are left intact. See the [OpenAI WebSocket continuation contract](https://developers.openai.com/api/docs/guides/websocket-mode#how-continuation-works).

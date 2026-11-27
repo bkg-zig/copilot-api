@@ -11,13 +11,13 @@ import type {
 } from "~/lib/types/responses"
 
 import { type ModelConfig, type ResolvedProviderConfig } from "~/lib/config"
-import { logCodexRateLimitsEvent } from "~/lib/codex-rate-limit"
+import { logCodexRateLimitsEvent } from "~/lib/providers/codex-rate-limit"
 
-import { HTTPError } from "~/lib/error"
-import { recordResponsesFirstToken } from "~/lib/first-token"
+import { HTTPError } from "~/lib/http/error"
+import { recordResponsesFirstToken } from "~/lib/http/first-token"
 import { debugJson, debugLazy } from "~/lib/logger"
-import { writeSSEIfConnected } from "~/lib/sse"
-import { resolveResponsesToolSearchName } from "~/lib/tool-search"
+import { writeSSEIfConnected } from "~/lib/http/sse"
+import { resolveResponsesToolSearchName } from "~/lib/cli/tool-search"
 import {
   normalizeResponsesUsage,
   type TokenUsageEndpoint,
@@ -170,6 +170,7 @@ export const handleOpenAIResponsesProviderWebSearchMessages = async (
 export const handleOpenAIResponsesProviderMessages = async (
   c: Context,
   options: {
+    forwardStructuredOutput?: boolean
     modelConfig: ModelConfig | undefined
     payload: AnthropicMessagesPayload
     provider: string
@@ -177,14 +178,25 @@ export const handleOpenAIResponsesProviderMessages = async (
     usageEndpoint?: TokenUsageEndpoint
   },
 ): Promise<Response> => {
-  const { modelConfig, payload, provider, providerConfig, usageEndpoint } =
-    options
+  const {
+    forwardStructuredOutput,
+    modelConfig,
+    payload,
+    provider,
+    providerConfig,
+    usageEndpoint,
+  } = options
   const selectedModel =
     providerConfig.name === "codex" ?
       getCodexModels().data.find((model) => model.id === payload.model)
     : undefined
   const wantsStream = payload.stream === true
-  const responsesPayload = translateAnthropicMessagesToResponsesPayload(payload)
+  const responsesPayload = translateAnthropicMessagesToResponsesPayload(
+    payload,
+    {
+      forwardStructuredOutput,
+    },
+  )
   const normalizedMessagesReasoningEffort =
     normalizeProviderResponsesReasoningEffort(responsesPayload, providerConfig)
   if (normalizedMessagesReasoningEffort) {

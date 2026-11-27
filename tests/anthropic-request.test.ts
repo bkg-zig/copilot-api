@@ -8,8 +8,8 @@ import type {
 } from "~/lib/types/anthropic"
 import type { Model } from "~/lib/types/models"
 
-import { COMPACT_REQUEST } from "~/lib/compact"
-import { requestContext } from "~/lib/request-context"
+import { COMPACT_REQUEST } from "~/lib/http/compact"
+import { requestContext } from "~/lib/http/request-context"
 import { state } from "~/lib/state"
 import {
   RICH_TOOL_RESULT_MOVED_TEXT,
@@ -290,6 +290,13 @@ describe("Anthropic to OpenAI translation logic", () => {
       max_tokens: payload.max_tokens,
       tool_choice: { type: "none", disable_parallel_tool_use: true },
     })
+    const withEmptyTools = translateToOpenAI({
+      model: payload.model,
+      messages: payload.messages,
+      max_tokens: payload.max_tokens,
+      tools: [],
+      tool_choice: { type: "auto", disable_parallel_tool_use: true },
+    })
 
     expect(disabled.parallel_tool_calls).toBe(false)
     expect(disabled.tool_choice).toBe("auto")
@@ -301,7 +308,9 @@ describe("Anthropic to OpenAI translation logic", () => {
     })
     expect(omitted).not.toHaveProperty("parallel_tool_calls")
     expect(withoutTools.tool_choice).toBeUndefined()
-    expect(withoutTools.parallel_tool_calls).toBe(false)
+    expect(withoutTools).not.toHaveProperty("parallel_tool_calls")
+    expect(withEmptyTools.tool_choice).toBeUndefined()
+    expect(withEmptyTools).not.toHaveProperty("parallel_tool_calls")
   })
 
   test("should translate comprehensive Anthropic payload to valid OpenAI payload", () => {
@@ -1145,5 +1154,74 @@ describe("compact request detection", () => {
     }
 
     expect(getCompactType(anthropicPayload)).toBe(COMPACT_REQUEST)
+  })
+})
+
+describe("Anthropic output_config.format translation to OpenAI Chat Completions", () => {
+  test("maps output_config.format into response_format only when enabled", () => {
+    const schema = {
+      title: "Code Review Verdict!",
+      description: "Structured code review result",
+      type: "object",
+      properties: {
+        decision: { type: "string" },
+      },
+      required: ["decision"],
+    }
+
+    const payload: AnthropicMessagesPayload = {
+      model: "gemini-4-neon",
+      max_tokens: 1024,
+      messages: [{ role: "user", content: "Review this patch" }],
+      output_config: {
+        format: {
+          type: "json_schema",
+          schema,
+        },
+      },
+    }
+
+    expect(translateToOpenAI(payload).response_format).toBeUndefined()
+    const translated = translateToOpenAI(payload, {
+      forwardStructuredOutput: true,
+    })
+
+    expect(translated.response_format).toEqual({
+      type: "json_schema",
+      json_schema: {
+        name: "Code_Review_Verdict",
+        description: "Structured code review result",
+        schema,
+      },
+    })
+
+    const fallbackNameTranslated = translateToOpenAI(
+      {
+        ...payload,
+        output_config: {
+          format: {
+            type: "json_schema",
+            schema: {
+              title: "!!!",
+              type: "object",
+              properties: { ok: { type: "boolean" } },
+            },
+          },
+        },
+      },
+      { forwardStructuredOutput: true },
+    )
+
+    expect(fallbackNameTranslated.response_format).toEqual({
+      type: "json_schema",
+      json_schema: {
+        name: "response",
+        schema: {
+          title: "!!!",
+          type: "object",
+          properties: { ok: { type: "boolean" } },
+        },
+      },
+    })
   })
 })
