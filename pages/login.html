@@ -1,0 +1,483 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark" />
+    <title>Copi | Anmeldung</title>
+    <link rel="stylesheet" href="/boilerplate.css" />
+    <link rel="stylesheet" href="/copilot-ui.css" />
+    <style>
+      :root {
+        color-scheme: dark;
+      }
+      body {
+        font-family: var(--font-mono);
+        background: var(--cyber-bg-deep);
+        color: var(--text-primary);
+      }
+      h1 {
+        color: var(--neon-cyan);
+      }
+      h2 {
+        color: var(--copi-violet);
+      }
+      input {
+        background: var(--cyber-bg-deep);
+        color: var(--text-primary);
+        border-color: var(--border);
+      }
+      button {
+        font-family: var(--font-mono);
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        min-height: 100vh;
+        margin: 0;
+        display: grid;
+        place-items: center;
+        padding: 24px;
+        background-color: var(--cyber-bg-deep);
+        background-image:
+          linear-gradient(rgba(0, 255, 204, 0.035) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(0, 255, 204, 0.035) 1px, transparent 1px),
+          radial-gradient(ellipse at 50% 8%, rgba(0, 255, 204, 0.1), transparent 72%);
+        background-size: 32px 32px, 32px 32px, 100% 100%;
+      }
+      main {
+        width: min(100%, 440px);
+      }
+      .brand {
+        margin: 0 0 22px;
+        text-align: center;
+      }
+      .brand-mark {
+        width: 48px;
+        height: 48px;
+        margin: 0 auto 14px;
+        border: 1px solid var(--neon-cyan);
+        border-radius: 0;
+        display: grid;
+        place-items: center;
+        color: var(--neon-cyan-bright);
+        font: 700 22px var(--font-mono);
+        background: var(--neon-cyan-alpha);
+        box-shadow: inset 0 0 24px var(--neon-cyan-alpha);
+      }
+      h1 {
+        margin: 0;
+        font: 700 25px var(--font-ui);
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+      }
+      .brand p {
+        margin: 7px 0 0;
+        color: var(--copi-blue);
+        font-size: 11px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+      .panel {
+        padding: 28px;
+        border: 1px solid var(--border-hover);
+        border-left: 3px solid var(--neon-cyan);
+        border-radius: 0;
+        background: var(--cyber-panel);
+        box-shadow: 0 24px 80px #0008;
+      }
+      h2 {
+        margin: 0 0 7px;
+        font: 700 18px var(--font-ui);
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+      }
+      .intro {
+        margin: 0 0 23px;
+        color: var(--copi-blue);
+        font-size: 12px;
+        line-height: 1.55;
+      }
+      label {
+        display: block;
+        margin: 16px 0 7px;
+        color: var(--copi-blue);
+        font: 600 10px var(--font-mono);
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+      }
+      input {
+        width: 100%;
+        min-height: 44px;
+        padding: 10px 12px;
+        border: 1px solid var(--border-hover);
+        border-radius: 0;
+        outline: none;
+        background: var(--cyber-bg-deep);
+        color: var(--text-primary);
+        font: 12px var(--font-mono);
+      }
+      input:focus {
+        border-color: var(--neon-cyan);
+        box-shadow: 0 0 0 2px var(--neon-cyan-alpha);
+      }
+      input[readonly] {
+        color: var(--copi-blue);
+        background: var(--cyber-panel-2);
+      }
+      button {
+        width: 100%;
+        min-height: 44px;
+        margin-top: 22px;
+        border: 1px solid var(--neon-cyan);
+        border-radius: 0;
+        background: rgba(0, 255, 204, 0.08);
+        color: var(--neon-cyan-bright);
+        font: 700 11px var(--font-mono);
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        cursor: pointer;
+      }
+      button:hover {
+        background: rgba(0, 255, 204, 0.18);
+        color: var(--text-primary);
+      }
+      button:focus-visible,
+      summary:focus-visible {
+        outline: 2px solid var(--neon-amber);
+        outline-offset: 3px;
+      }
+      button:disabled {
+        opacity: 0.4;
+        cursor: not-allowed;
+      }
+      .error {
+        min-height: 22px;
+        margin: 14px 0 0;
+        border-left: 3px solid var(--neon-red);
+        padding: 7px 12px;
+        background: rgba(255, 77, 109, 0.08);
+        color: var(--neon-red-bright);
+        font: 11px var(--font-mono);
+        line-height: 1.5;
+      }
+      .hint {
+        margin: 15px 0 0;
+        color: var(--text-secondary);
+        font-size: 11px;
+        line-height: 1.5;
+      }
+      .reset-section {
+        margin-top: 22px;
+        border-top: 1px solid var(--border);
+        padding-top: 14px;
+      }
+      .reset-section summary {
+        color: var(--copi-violet);
+        font: 600 11px var(--font-mono);
+        letter-spacing: 0.06em;
+        cursor: pointer;
+      }
+      .reset-section summary:hover {
+        color: var(--neon-cyan);
+      }
+      .success {
+        margin: 10px 0 0;
+        border-left: 3px solid var(--neon-green);
+        padding: 7px 12px;
+        background: rgba(0, 255, 65, 0.07);
+        color: var(--neon-green-bright);
+        font: 11px var(--font-mono);
+        line-height: 1.5;
+      }
+      .hidden {
+        display: none !important;
+      }
+      .hint,
+      footer {
+        color: var(--copi-blue);
+        font: 10px var(--font-mono);
+        letter-spacing: 0.08em;
+      }
+      footer {
+        margin-top: 18px;
+        text-align: center;
+        text-transform: uppercase;
+      }
+      @media (max-width: 480px) {
+        .panel {
+          padding: 22px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header class="brand">
+        <div class="brand-mark" aria-hidden="true">C</div>
+        <h1>Copi Gateway</h1>
+        <p>BKG · Private Model Workstation</p>
+      </header>
+      <section class="panel" aria-labelledby="auth-title">
+        <div id="setup-view" class="hidden">
+          <h2 id="auth-title">Administratorkonto einrichten</h2>
+          <p class="intro">
+            Erstelle das einmalige Konto für diese Installation. Danach ist die
+            Registrierung dauerhaft gesperrt.
+          </p>
+          <form id="register-form">
+            <label for="register-email">E-Mail-Adresse</label>
+            <input
+              id="register-email"
+              name="email"
+              type="email"
+              value="bkg@eysho.info"
+              autocomplete="username"
+              readonly
+              required
+            />
+            <label for="register-password">Passwort</label>
+            <input
+              id="register-password"
+              name="password"
+              type="password"
+              autocomplete="new-password"
+              minlength="12"
+              required
+            />
+            <label for="register-confirm">Passwort bestätigen</label>
+            <input
+              id="register-confirm"
+              name="confirmPassword"
+              type="password"
+              autocomplete="new-password"
+              minlength="12"
+              required
+            />
+            <button id="register-submit" type="submit">Konto einrichten</button>
+          </form>
+        </div>
+        <div id="login-view" class="hidden">
+          <h2 id="login-title">Anmelden</h2>
+          <p class="intro">
+            Melde dich mit deinem Copi-Administratorkonto an, um die
+            Weboberfläche zu öffnen.
+          </p>
+          <form id="login-form">
+            <label for="login-email">E-Mail-Adresse</label>
+            <input
+              id="login-email"
+              name="email"
+              type="email"
+              value="bkg@eysho.info"
+              autocomplete="username"
+              required
+            />
+            <label for="login-password">Passwort</label>
+            <input
+              id="login-password"
+              name="password"
+              type="password"
+              autocomplete="current-password"
+              required
+            />
+            <button id="login-submit" type="submit">Anmelden</button>
+          </form>
+          <details class="reset-section">
+            <summary>Passwort mit Admin-API-Key zurücksetzen</summary>
+            <form id="reset-form">
+              <label for="reset-api-key">Admin-API-Key</label>
+              <input
+                id="reset-api-key"
+                name="adminApiKey"
+                type="password"
+                autocomplete="off"
+                required
+              />
+              <label for="reset-password">Neues Passwort</label>
+              <input
+                id="reset-password"
+                name="password"
+                type="password"
+                autocomplete="new-password"
+                minlength="12"
+                required
+              />
+              <label for="reset-confirm">Neues Passwort bestätigen</label>
+              <input
+                id="reset-confirm"
+                name="confirmPassword"
+                type="password"
+                autocomplete="new-password"
+                minlength="12"
+                required
+              />
+              <button id="reset-submit" type="submit">Passwort zurücksetzen</button>
+            </form>
+          </details>
+          <p id="reset-error" class="error" role="alert" aria-live="assertive"></p>
+          <p id="reset-feedback" class="success" role="status" aria-live="polite"></p>
+        </div>
+        <p id="auth-error" class="error" role="alert" aria-live="assertive"></p>
+        <p id="auth-hint" class="hint">
+          Geschützte Sitzung · Argon2id · HttpOnly-Cookie
+        </p>
+      </section>
+      <footer>copi.eysho.info · BKG</footer>
+    </main>
+    <script>
+      const setupView = document.getElementById("setup-view");
+      const loginView = document.getElementById("login-view");
+      const errorBox = document.getElementById("auth-error");
+      const hint = document.getElementById("auth-hint");
+      const resetError = document.getElementById("reset-error");
+      const resetFeedback = document.getElementById("reset-feedback");
+      const parsePayload = async (response) => {
+        const body = await response.json().catch(() => ({}));
+        if (!response.ok)
+          throw new Error(
+            body?.error?.message ||
+              `Anmeldung fehlgeschlagen (${response.status}).`,
+          );
+        return body;
+      };
+      async function start() {
+        try {
+          const status = await parsePayload(
+            await fetch("/auth/status", {
+              credentials: "same-origin",
+              cache: "no-store",
+            }),
+          );
+          if (status.isAuthenticated) {
+            location.replace("/");
+            return;
+          }
+          (status.needsSetup ? setupView : loginView).classList.remove(
+            "hidden",
+          );
+          if (status.needsSetup)
+            document.getElementById("register-password").focus();
+          else document.getElementById("login-email").focus();
+        } catch (error) {
+          errorBox.textContent = error.message;
+          hint.textContent =
+            "Der Authentifizierungsdienst ist momentan nicht erreichbar.";
+        }
+      }
+      async function submit(
+        form,
+        endpoint,
+        buttonId,
+        passwordField,
+        confirmField,
+      ) {
+        errorBox.textContent = "";
+        const button = document.getElementById(buttonId);
+        const data = new FormData(form);
+        const password = String(data.get(passwordField) || "");
+        if (confirmField && password !== String(data.get(confirmField) || "")) {
+          errorBox.textContent = "Die Passwörter stimmen nicht überein.";
+          return;
+        }
+        button.disabled = true;
+        try {
+          await parsePayload(
+            await fetch(endpoint, {
+              method: "POST",
+              credentials: "same-origin",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({
+                email: String(data.get("email") || ""),
+                password,
+              }),
+            }),
+          );
+          location.replace("/");
+        } catch (error) {
+          errorBox.textContent = error.message;
+          button.disabled = false;
+        }
+      }
+      async function submitPasswordReset(event) {
+        event.preventDefault();
+        resetError.textContent = "";
+        resetFeedback.textContent = "";
+        const form = event.currentTarget;
+        const data = new FormData(form);
+        const password = String(data.get("password") || "");
+        if (password !== String(data.get("confirmPassword") || "")) {
+          resetError.textContent = "Die Passwörter stimmen nicht überein.";
+          return;
+        }
+        const button = document.getElementById("reset-submit");
+        button.disabled = true;
+        try {
+          const response = await fetch("/admin/auth/reset-password", {
+            method: "POST",
+            credentials: "same-origin",
+            cache: "no-store",
+            headers: {
+              "content-type": "application/json",
+              "x-api-key": String(data.get("adminApiKey") || ""),
+            },
+            body: JSON.stringify({ password }),
+          });
+          const payload = await response.json().catch(() => ({}));
+          if (!response.ok) {
+            resetError.textContent =
+              response.status === 401
+                ? "Der Admin-API-Key ist ungültig."
+                : payload?.error?.message ||
+                  `Passwort zurücksetzen fehlgeschlagen (${response.status}).`;
+            return;
+          }
+          form.reset();
+          resetFeedback.textContent =
+            "Passwort aktualisiert. Alle Sitzungen wurden beendet. Bitte neu anmelden.";
+          document.getElementById("login-email").focus();
+        } catch (error) {
+          resetError.textContent =
+            error instanceof Error
+              ? error.message
+              : "Passwort zurücksetzen fehlgeschlagen.";
+        } finally {
+          button.disabled = false;
+        }
+      }
+      document
+        .getElementById("register-form")
+        .addEventListener("submit", (event) => {
+          event.preventDefault();
+          void submit(
+            event.currentTarget,
+            "/auth/register",
+            "register-submit",
+            "password",
+            "confirmPassword",
+          );
+        });
+      document
+        .getElementById("login-form")
+        .addEventListener("submit", (event) => {
+          event.preventDefault();
+          void submit(
+            event.currentTarget,
+            "/auth/login",
+            "login-submit",
+            "password",
+            null,
+          );
+        });
+      document
+        .getElementById("reset-form")
+        .addEventListener("submit", (event) => {
+          void submitPasswordReset(event);
+        });
+      void start();
+    </script>
+  </body>
+</html>

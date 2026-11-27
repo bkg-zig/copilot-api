@@ -3,21 +3,22 @@ import type { Context } from "hono"
 
 import { streamSSE } from "hono/streaming"
 
-import type { CompactType } from "~/lib/compact"
-import type { SubagentMarker } from "~/lib/subagent"
+import type { CompactType } from "~/lib/http/compact"
+import type { SubagentMarker } from "~/lib/http/subagent"
 import type { Model } from "~/lib/types/models"
 
 import { getRawProviderConfig } from "~/lib/config"
+import { HTTPError } from "~/lib/http/error"
 import {
   recordAnthropicFirstToken,
   recordChatCompletionFirstToken,
   recordResponsesFirstToken,
-} from "~/lib/first-token"
-import { GITHUB_COPILOT_PROVIDER } from "~/lib/github-copilot-provider"
+} from "~/lib/http/first-token"
+import { GITHUB_COPILOT_PROVIDER } from "~/lib/providers/github-copilot-provider"
 import { debugJson, debugJsonTail, debugLazy } from "~/lib/logger"
-import { getProviderModelPdfSupport } from "~/lib/model-pdf-support"
-import { writeSSEIfConnected } from "~/lib/sse"
-import { resolveResponsesToolSearchName } from "~/lib/tool-search"
+import { getProviderModelPdfSupport } from "~/lib/catalog/model-pdf-support"
+import { writeSSEIfConnected } from "~/lib/http/sse"
+import { resolveResponsesToolSearchName } from "~/lib/cli/tool-search"
 import {
   createCopilotTokenUsageRecorder,
   mergeAnthropicUsage,
@@ -93,6 +94,7 @@ export interface FlowBaseOptions {
   requestId: string
   sessionId?: string
   compactType?: CompactType
+  forwardStructuredOutput?: boolean
   usageEndpoint?: TokenUsageEndpoint
 }
 
@@ -109,6 +111,32 @@ interface ChatCompletionsFlowOptions extends FlowBaseOptions {
   selectedModel?: Model
 }
 
+const assertStructuredOutputSupport = (
+  payload: AnthropicMessagesPayload,
+  selectedModel: Model | undefined,
+  forwardStructuredOutput: boolean | undefined,
+): void => {
+  if (
+    forwardStructuredOutput
+    && payload.output_config?.format
+    && selectedModel?.capabilities.supports.structured_outputs === false
+  ) {
+    const message = `Model '${selectedModel.id}' does not support structured JSON schema output`
+    throw new HTTPError(
+      message,
+      Response.json(
+        {
+          error: {
+            type: "invalid_request_error",
+            message,
+          },
+        },
+        { status: 400 },
+      ),
+    )
+  }
+}
+
 export const handleWithChatCompletions = async (
   c: Context,
   anthropicPayload: AnthropicMessagesPayload,
@@ -121,8 +149,15 @@ export const handleWithChatCompletions = async (
     requestId,
     sessionId,
     compactType,
+    forwardStructuredOutput,
   } = options
+  assertStructuredOutputSupport(
+    anthropicPayload,
+    selectedModel,
+    forwardStructuredOutput,
+  )
   const openAIPayload = translateToOpenAI(anthropicPayload, {
+    forwardStructuredOutput,
     supportPdf: getProviderModelPdfSupport(
       anthropicPayload.model,
       {
@@ -244,10 +279,18 @@ export const handleWithResponsesApi = async (
   anthropicPayload: AnthropicMessagesPayload,
   options: ResponsesFlowOptions,
 ) => {
-  const { logger, selectedModel, ...requestOptions } = options
+  const { logger, selectedModel, forwardStructuredOutput, ...requestOptions } =
+    options
+  assertStructuredOutputSupport(
+    anthropicPayload,
+    selectedModel,
+    forwardStructuredOutput,
+  )
 
-  const responsesPayload =
-    translateAnthropicMessagesToResponsesPayload(anthropicPayload)
+  const responsesPayload = translateAnthropicMessagesToResponsesPayload(
+    anthropicPayload,
+    { forwardStructuredOutput },
+  )
   const recordUsage = createCopilotUsageRecorder({
     endpoint: options.usageEndpoint ?? "responses",
     fallbackSessionId: requestOptions.sessionId,
@@ -403,8 +446,14 @@ export const handleWithMessagesApi = async (
     requestId,
     sessionId,
     compactType,
+    forwardStructuredOutput,
   } = options
 
+  assertStructuredOutputSupport(
+    anthropicPayload,
+    selectedModel,
+    forwardStructuredOutput,
+  )
   prepareMessagesApiPayload(anthropicPayload, selectedModel)
   const recordUsage = createCopilotUsageRecorder({
     endpoint: options.usageEndpoint ?? "messages",

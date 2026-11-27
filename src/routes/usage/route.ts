@@ -11,6 +11,7 @@ usageRoute.get("/:provider", async (c) => {
   if (
     provider !== "codex"
     && provider !== "xai"
+    && provider !== "anthropic"
     && provider !== "github-copilot"
     && provider !== "opencode-go"
   ) {

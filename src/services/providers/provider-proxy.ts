@@ -10,13 +10,18 @@ import {
   normalizeProviderBaseUrl,
   type ResolvedProviderConfig,
 } from "~/lib/config"
-import { getGrokBuildVersion } from "~/lib/grok-build"
-import { XAI_API_BASE_URL } from "~/lib/oauth/xai"
+import {
+  CLAUDE_OAUTH_BETA,
+  CLAUDE_OAUTH_USER_AGENT,
+  CLAUDE_OAUTH_VERSION,
+} from "~/lib/auth/claude-code/oauth"
+import { getGrokBuildVersion } from "~/lib/providers/grok-build"
+import { XAI_API_BASE_URL } from "~/lib/auth/oauth/xai"
 import {
   requestContext,
   setPluginRequestActualModel,
-} from "~/lib/request-context"
-import { createTimeoutDispatcher } from "~/lib/timeout-dispatcher"
+} from "~/lib/http/request-context"
+import { createTimeoutDispatcher } from "~/lib/http/timeout-dispatcher"
 import type { AnthropicMessagesPayload } from "~/lib/types/anthropic"
 import type { ChatCompletionsPayload } from "~/lib/types/chat-completions"
 import type { ResponsesPayload } from "~/lib/types/responses"
@@ -79,11 +84,17 @@ export function resolveProviderEndpointUrl(
       /\/v\d+(?:alpha|beta)?$/u.test(base) ? base : `${base}/v1beta`
     return `${apiBase}/${endpoint}`
   }
+  const normalizedBaseUrl = providerConfig.baseUrl.replace(/\/+$/u, "")
   const apiBaseUrl =
     providerConfig.modelsDevProviderId ?
-      providerConfig.baseUrl.replace(/\/(?:chat\/completions|responses)$/u, "")
-    : `${providerConfig.baseUrl}/v1`
-  return `${apiBaseUrl}/${endpoint}`
+      normalizedBaseUrl.replace(/\/(?:chat\/completions|responses)$/u, "")
+    : (
+      /\/v\d+(?:alpha|beta)?(?:\/openai)?$/u.test(normalizedBaseUrl)
+      || /\/(?:openai|gateway)$/u.test(normalizedBaseUrl)
+    ) ?
+      normalizedBaseUrl
+    : normalizedBaseUrl + "/v1"
+  return apiBaseUrl + "/" + endpoint
 }
 
 export function buildProviderUpstreamHeaders(
@@ -96,7 +107,7 @@ export function buildProviderUpstreamHeaders(
     || providerConfig.authType === "x-goog-api-key"
   ) {
     authHeaders[providerConfig.authType] = providerConfig.apiKey
-  } else {
+  } else if (providerConfig.authType !== "none") {
     authHeaders.authorization = `Bearer ${providerConfig.apiKey}`
   }
 
@@ -128,7 +139,42 @@ export function buildProviderUpstreamHeaders(
     }
   }
 
+  if (
+    providerConfig.name === "anthropic"
+    && providerConfig.authType === "oauth2"
+  ) {
+    // The Claude subscription token is only accepted with the OAuth beta and
+    // a CLI-like client identity. Order matters: keep oauth-2025-04-20 first.
+    headers["anthropic-version"] = CLAUDE_OAUTH_VERSION
+    headers["anthropic-beta"] = mergeBetaHeaders(headers["anthropic-beta"], [
+      CLAUDE_OAUTH_BETA,
+      "claude-code-20250219",
+    ])
+    headers["x-app"] = "cli"
+    headers["user-agent"] = CLAUDE_OAUTH_USER_AGENT
+  }
+
   return headers
+}
+
+function mergeBetaHeaders(
+  current: string | undefined,
+  required: Array<string>,
+): string {
+  const values = new Set(
+    (current ?? "")
+      .split(",")
+      .map((value) => value.trim())
+      .filter(Boolean),
+  )
+  for (const value of required) values.add(value)
+  // Keep the OAuth beta first. Anthropic rejects the token when it is absent
+  // or listed after unrelated betas.
+  const ordered = [
+    ...required.filter((value) => values.has(value)),
+    ...[...values].filter((value) => !required.includes(value)),
+  ]
+  return ordered.join(",")
 }
 
 export const resolveOpencodeMessagesSession = (): string | undefined => {
@@ -220,7 +266,10 @@ export async function forwardProviderMessages(
   providerConfig: ResolvedProviderConfig,
   payload: AnthropicMessagesPayload,
   requestHeaders: Headers,
-  options: { clientSignal?: AbortSignal } = {},
+  options: {
+    clientSignal?: AbortSignal
+    upstreamSignal?: AbortSignal
+  } = {},
 ): Promise<Response> {
   consola.log(`<-- model: ${payload.model}`)
   const headers = buildProviderUpstreamHeaders(providerConfig, requestHeaders)
@@ -237,6 +286,7 @@ export async function forwardProviderMessages(
       method: "POST",
       headers,
       body: JSON.stringify(payload),
+      signal: options.upstreamSignal,
     },
     {
       clientSignal: options.clientSignal,
@@ -250,7 +300,10 @@ export async function forwardProviderChatCompletions(
   providerConfig: ResolvedProviderConfig,
   payload: ChatCompletionsPayload,
   requestHeaders: Headers,
-  options: { clientSignal?: AbortSignal } = {},
+  options: {
+    clientSignal?: AbortSignal
+    upstreamSignal?: AbortSignal
+  } = {},
 ): Promise<Response> {
   consola.log(`<-- model: ${payload.model}`)
   const headers = buildProviderUpstreamHeaders(providerConfig, requestHeaders)
@@ -267,6 +320,7 @@ export async function forwardProviderChatCompletions(
       method: "POST",
       headers,
       body: JSON.stringify(payload),
+      signal: options.upstreamSignal,
     },
     {
       clientSignal: options.clientSignal,
@@ -280,7 +334,10 @@ export async function forwardProviderResponses(
   providerConfig: ResolvedProviderConfig,
   payload: ResponsesPayload,
   requestHeaders: Headers,
-  options: { clientSignal?: AbortSignal } = {},
+  options: {
+    clientSignal?: AbortSignal
+    upstreamSignal?: AbortSignal
+  } = {},
 ): Promise<Response> {
   consola.log(`<-- model: ${payload.model}`)
   const transportConfig = getUpstreamTransportConfig()
@@ -298,6 +355,7 @@ export async function forwardProviderResponses(
       method: "POST",
       headers,
       body: JSON.stringify(payload),
+      signal: options.upstreamSignal,
     },
     {
       headersTimeoutMs: transportConfig.headersTimeoutMs,

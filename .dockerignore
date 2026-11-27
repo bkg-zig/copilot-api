@@ -37,3 +37,6 @@ desktop/
 # OS/editor files
 .DS_Store
 Thumbs.db
+
+# Local BKG deployment credentials
+.secrets/

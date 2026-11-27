@@ -1,13 +1,15 @@
 import { afterEach, describe, expect, spyOn, test } from "bun:test"
 
-import * as providerResolver from "~/lib/provider-resolver"
-import * as grokBuild from "~/lib/grok-build"
-import * as xaiToken from "~/lib/xai-token"
-import * as githubProvider from "~/lib/github-copilot-provider"
+import * as providerResolver from "~/lib/providers/provider-resolver"
+import * as appConfig from "~/lib/config"
+import * as grokBuild from "~/lib/providers/grok-build"
+import * as xaiToken from "~/lib/auth/xai-token"
+import * as credentialStore from "~/lib/auth/credential-store"
 import { state } from "~/lib/state"
 import * as subscriptionUsage from "~/services/subscription-usage"
 import {
   getSubscriptionUsage,
+  normalizeClaudeUsage,
   normalizeCodexUsage,
   normalizeXaiUsage,
   normalizeCopilotUsage,
@@ -38,7 +40,11 @@ const codexWindow = {
   reset_at: 1793000000,
 }
 
-const goWindow = { status: "ok", percent: 25, resetsAt: "2026-11-01T08:00:00Z" }
+const goWindow = {
+  status: "ok",
+  percent: 25,
+  resetsAt: "2026-11-01T08:00:00Z",
+}
 
 describe("OpenCode Go subscription usage", () => {
   test("normalizes rolling, weekly and monthly allowances without inventing monetary limits", () => {
@@ -178,9 +184,9 @@ describe("Copilot subscription usage", () => {
   })
 
   test("queries Copilot independently of third-party OAuth routing", async () => {
-    const enabled = track(
-      spyOn(githubProvider, "isGitHubCopilotEnabled"),
-    ).mockReturnValue(true)
+    const readToken = track(
+      spyOn(credentialStore, "readGitHubToken"),
+    ).mockResolvedValue("github-subscription-token")
     const getUsage = track(
       spyOn(copilotUsage, "getCopilotUsage"),
     ).mockResolvedValue({ copilot_plan: "business" } as Awaited<
@@ -190,12 +196,13 @@ describe("Copilot subscription usage", () => {
     expect(
       await getSubscriptionUsage("github-copilot", controller.signal),
     ).toMatchObject({ provider: "github-copilot", planType: "business" })
+    expect(getUsage.mock.calls[0][0]).toBe("github-subscription-token")
     const signal = getUsage.mock.calls[0][1]
     controller.abort()
     expect(signal?.aborted).toBe(true)
     getUsage.mockResolvedValue(null)
     expect(await getSubscriptionUsage("github-copilot")).toBeNull()
-    enabled.mockReturnValue(false)
+    readToken.mockResolvedValue(null)
     expect(await getSubscriptionUsage("github-copilot")).toBeNull()
     expect(getUsage).toHaveBeenCalledTimes(2)
   })
@@ -345,6 +352,24 @@ describe("Codex subscription usage", () => {
   })
 })
 
+describe("Claude subscription usage", () => {
+  test("maps Anthropic OAuth windows and extra usage", () => {
+    const claude = normalizeClaudeUsage({
+      five_hour: { utilization: 12.5, resets_at: "2026-11-25T12:00:00.000Z" },
+      seven_day: { utilization: 40 },
+      extra_usage: { is_enabled: true, utilization: 100 },
+    })
+    expect(claude.provider).toBe("anthropic")
+    expect(claude.windows.map((window) => window.id)).toEqual([
+      "anthropic:five_hour",
+      "anthropic:seven_day",
+      "anthropic:extra_usage",
+    ])
+    expect(claude.limitReached).toBe(true)
+    expect(normalizeClaudeUsage({}).windows).toEqual([])
+  })
+})
+
 describe("Grok Build subscription usage", () => {
   test("prefers weekly credits-config percentages over legacy budgets", () => {
     const result = normalizeXaiUsage({
@@ -433,6 +458,9 @@ function mockProvider(
   provider: "codex" | "xai" | "opencode-go",
   authType: "oauth2" | "authorization" = "oauth2",
 ) {
+  track(spyOn(appConfig, "getRawProviderConfig")).mockReturnValue({
+    authType,
+  } as ReturnType<typeof appConfig.getRawProviderConfig>)
   return track(
     spyOn(providerResolver, "resolveProviderConfig"),
   ).mockResolvedValue({
@@ -549,6 +577,9 @@ describe("subscription usage requests", () => {
 
   test("xAI matches the Grok Build billing endpoint, version, and account headers", async () => {
     mockProvider("xai")
+    track(spyOn(xaiToken, "getXaiAccessToken")).mockResolvedValue(
+      "upstream-token",
+    )
     track(spyOn(xaiToken, "readXaiCredentials")).mockResolvedValue({
       accountId: "grok-user",
       accessToken: "upstream-token",
@@ -588,6 +619,7 @@ describe("subscription usage requests", () => {
       apiKey: "upstream-token",
       authType: "oauth2",
     })
+    track(spyOn(xaiToken, "getXaiAccessToken")).mockResolvedValue(null)
     track(spyOn(xaiToken, "readXaiCredentials")).mockResolvedValue(null)
     expect(await getSubscriptionUsage("xai")).toBeNull()
     expect(fetcher).not.toHaveBeenCalled()
@@ -595,6 +627,9 @@ describe("subscription usage requests", () => {
 
   test("rejects account changes and redacts upstream errors", async () => {
     mockProvider("xai")
+    track(spyOn(xaiToken, "getXaiAccessToken")).mockResolvedValue(
+      "different-access-token",
+    )
     track(spyOn(xaiToken, "readXaiCredentials")).mockResolvedValue({
       accountId: "changed",
       accessToken: "different",
@@ -614,7 +649,9 @@ describe("subscription usage requests", () => {
     )
     expect(
       await getSubscriptionUsage("codex").catch((error: unknown) => error),
-    ).toMatchObject({ message: "Subscription usage request failed (HTTP 401)" })
+    ).toMatchObject({
+      message: "Subscription usage request failed (HTTP 401)",
+    })
   })
 })
 
