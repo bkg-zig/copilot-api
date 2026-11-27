@@ -108,6 +108,22 @@ describe("resolveProviderAuthType", () => {
     expect(headers.authorization).toBe("Bearer xai-access-token")
     expect(headers["x-api-key"]).toBeUndefined()
   })
+  test("supports explicit no-auth upstreams without forwarding credentials", () => {
+    expect(resolveProviderAuthType("bridge", "none", "openai-compatible")).toBe(
+      "none",
+    )
+    const headers = buildProviderUpstreamHeaders(
+      createProviderConfig({ authType: "none", apiKey: "" }),
+      new Headers({
+        authorization: "Bearer client-secret",
+        "x-api-key": "client-secret",
+      }),
+    )
+    expect(headers.authorization).toBeUndefined()
+    expect(headers["x-api-key"]).toBeUndefined()
+    expect(headers["content-type"]).toBe("application/json")
+  })
+
   test("falls back to OpenAI-compatible default for invalid authType", () => {
     expect(
       resolveProviderAuthType("dash", "invalid-auth-type", "openai-compatible"),
@@ -118,6 +134,26 @@ describe("resolveProviderAuthType", () => {
     expect(
       resolveProviderAuthType("custom", "invalid-auth-type", "anthropic"),
     ).toBe("x-api-key")
+  })
+
+  test("supports Claude subscription OAuth headers", () => {
+    expect(resolveProviderAuthType("anthropic", "oauth2", "anthropic")).toBe(
+      "oauth2",
+    )
+    const headers = buildProviderUpstreamHeaders(
+      createProviderConfig({
+        name: "anthropic",
+        type: "anthropic",
+        authType: "oauth2",
+        apiKey: "claude-access-token",
+      }),
+      new Headers({ "anthropic-beta": "context-1m-2025-08-07" }),
+    )
+    expect(headers.authorization).toBe("Bearer claude-access-token")
+    expect(headers["anthropic-beta"]?.startsWith("oauth-2025-04-20")).toBe(true)
+    expect(headers["anthropic-beta"]).toContain("claude-code-20250219")
+    expect(headers["anthropic-beta"]).toContain("context-1m-2025-08-07")
+    expect(headers["x-app"]).toBe("cli")
   })
 
   test("falls back for non-codex oauth2 providers", () => {
@@ -189,6 +225,28 @@ describe("provider endpoint URL", () => {
         "chat/completions",
       ),
     ).toBe("https://api.example.com/v1/chat/completions")
+  })
+
+  test.each([
+    [
+      "https://text.pollinations.ai/openai",
+      "https://text.pollinations.ai/openai/chat/completions",
+    ],
+    [
+      "https://api.kilo.ai/api/gateway",
+      "https://api.kilo.ai/api/gateway/chat/completions",
+    ],
+    [
+      "https://generativelanguage.googleapis.com/v1beta/openai",
+      "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
+    ],
+  ])("preserves OpenAI-compatible base path %s", (baseUrl, expected) => {
+    expect(
+      resolveProviderEndpointUrl(
+        createProviderConfig({ baseUrl }),
+        "chat/completions",
+      ),
+    ).toBe(expected)
   })
 
   test("preserves the existing manual-provider URL convention", () => {

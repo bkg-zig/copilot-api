@@ -1,7 +1,7 @@
 import {
   UpstreamHeadersTimeoutError,
   UpstreamStreamInactivityTimeoutError,
-} from "~/lib/error"
+} from "~/lib/http/error"
 
 export interface UpstreamHttpLifecycleOptions {
   clientSignal?: AbortSignal
@@ -15,15 +15,23 @@ export async function fetchUpstreamWithLifecycle(
   options: UpstreamHttpLifecycleOptions,
 ): Promise<Response> {
   options.clientSignal?.throwIfAborted()
+  init.signal?.throwIfAborted()
   const lifecycle = createRequestLifecycle(options)
+  const signal =
+    init.signal ?
+      AbortSignal.any([init.signal, lifecycle.signal])
+    : lifecycle.signal
 
   try {
     const response = await fetch(input, {
       ...init,
-      signal: lifecycle.signal,
+      signal,
     })
     lifecycle.headersReceived()
-    return createManagedResponse(response, lifecycle, options)
+    return createManagedResponse(response, lifecycle, {
+      ...options,
+      requestSignal: signal,
+    })
   } catch (error) {
     throw lifecycle.finishWithError(error)
   }
@@ -73,10 +81,14 @@ const createRequestLifecycle = (
   }
 }
 
+type ManagedUpstreamHttpLifecycleOptions = UpstreamHttpLifecycleOptions & {
+  requestSignal: AbortSignal
+}
+
 const createManagedResponse = (
   response: Response,
   lifecycle: RequestLifecycle,
-  options: UpstreamHttpLifecycleOptions,
+  options: ManagedUpstreamHttpLifecycleOptions,
 ): Response => {
   if (!response.body) {
     lifecycle.finish()
@@ -94,7 +106,7 @@ const createManagedResponse = (
 const createManagedResponseBody = (
   body: ReadableStream<Uint8Array>,
   lifecycle: RequestLifecycle,
-  options: UpstreamHttpLifecycleOptions,
+  options: ManagedUpstreamHttpLifecycleOptions,
 ): ReadableStream<Uint8Array> => {
   const reader = body.getReader()
   let finished = false
@@ -147,11 +159,11 @@ const readWithLifecycle = async (
     read: () => Promise<{ done: boolean; value?: Uint8Array }>
   },
   lifecycle: RequestLifecycle,
-  options: UpstreamHttpLifecycleOptions,
+  options: ManagedUpstreamHttpLifecycleOptions,
 ): Promise<{ done: boolean; value?: Uint8Array }> =>
   await new Promise((resolve, reject) => {
     let settled = false
-    const signal = lifecycle.signal
+    const signal = options.requestSignal
     const timer = setTimeout(() => {
       const error = new UpstreamStreamInactivityTimeoutError(
         options.streamInactivityTimeoutMs,

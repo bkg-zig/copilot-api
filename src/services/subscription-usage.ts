@@ -1,11 +1,16 @@
 import { z } from "zod"
 import os from "node:os"
 
-import { getGrokBuildVersion } from "~/lib/grok-build"
-import { XAI_API_BASE_URL } from "~/lib/oauth/xai"
-import { resolveProviderConfig } from "~/lib/provider-resolver"
-import { readXaiCredentials } from "~/lib/xai-token"
-import { isGitHubCopilotEnabled } from "~/lib/github-copilot-provider"
+import { getGrokBuildVersion } from "~/lib/providers/grok-build"
+import { XAI_API_BASE_URL } from "~/lib/auth/oauth/xai"
+import { resolveProviderConfig } from "~/lib/providers/provider-resolver"
+import { getRawProviderConfig } from "~/lib/config"
+import {
+  fetchClaudeOAuthUsage,
+  getClaudeAccessToken,
+} from "~/lib/auth/claude-code/oauth"
+import { getXaiAccessToken, readXaiCredentials } from "~/lib/auth/xai-token"
+import { readGitHubToken } from "~/lib/auth/credential-store"
 import { getCopilotUsage } from "~/services/github/get-copilot-usage"
 import { resolveProviderEndpointUrl } from "~/services/providers/provider-proxy"
 import type {
@@ -300,6 +305,84 @@ function parseResetDate(value: string | null | undefined): number | undefined {
   return Number.isFinite(milliseconds) ? milliseconds / 1000 : undefined
 }
 
+const claudeUsageWindow = z.object({
+  utilization: number.nullish(),
+  resets_at: z.string().nullish(),
+})
+const claudeUsage = z.object({
+  five_hour: claudeUsageWindow.nullish(),
+  seven_day: claudeUsageWindow.nullish(),
+  seven_day_opus: claudeUsageWindow.nullish(),
+  seven_day_sonnet: claudeUsageWindow.nullish(),
+  extra_usage: z
+    .object({
+      is_enabled: z.boolean().nullish(),
+      monthly_limit: number.nullish(),
+      used_credits: number.nullish(),
+      utilization: number.nullish(),
+    })
+    .nullish(),
+})
+
+export function normalizeClaudeUsage(value: unknown): SubscriptionUsage {
+  const usage = claudeUsage.parse(value)
+  const windows: Array<SubscriptionQuotaWindow> = []
+  const addWindow = (
+    id: string,
+    window:
+      | { utilization?: number | null; resets_at?: string | null }
+      | null
+      | undefined,
+    windowSeconds: number,
+    name?: string,
+  ): void => {
+    if (!window) return
+    const usedPercent = window.utilization ?? undefined
+    const resetAt = parseResetDate(window.resets_at)
+    if (usedPercent === undefined && resetAt === undefined) return
+    windows.push({
+      id,
+      kind: "usage",
+      name,
+      windowSeconds,
+      usedPercent,
+      resetAt,
+      limitReached: (usedPercent ?? 0) >= 100,
+    })
+  }
+  addWindow("anthropic:five_hour", usage.five_hour, 5 * 60 * 60)
+  addWindow("anthropic:seven_day", usage.seven_day, 7 * 24 * 60 * 60)
+  addWindow(
+    "anthropic:seven_day_opus",
+    usage.seven_day_opus,
+    7 * 24 * 60 * 60,
+    "Opus",
+  )
+  addWindow(
+    "anthropic:seven_day_sonnet",
+    usage.seven_day_sonnet,
+    7 * 24 * 60 * 60,
+    "Sonnet",
+  )
+
+  const extra = usage.extra_usage
+  if (extra?.is_enabled && extra.utilization != null) {
+    windows.push({
+      id: "anthropic:extra_usage",
+      kind: "on-demand",
+      period: "monthly",
+      usedPercent: extra.utilization,
+      limitReached: extra.utilization >= 100,
+    })
+  }
+
+  return {
+    provider: "anthropic",
+    windows,
+    limitReached: windows.some((window) => window.limitReached === true),
+  }
+}
+
 export function normalizeXaiUsage(value: unknown): SubscriptionUsage {
   const usage = xaiUsage.parse(value)
   const config = usage.config
@@ -378,21 +461,29 @@ export async function getSubscriptionUsage(
   signal?: AbortSignal,
 ): Promise<SubscriptionUsage | null> {
   if (provider === "github-copilot") {
-    if (!isGitHubCopilotEnabled()) return null
+    const githubToken = await readGitHubToken()
+    if (!githubToken) return null
     const timeout = AbortSignal.timeout(15_000)
     const usage = await getCopilotUsage(
-      undefined,
+      githubToken,
       signal ? AbortSignal.any([signal, timeout]) : timeout,
     )
     return usage ? normalizeCopilotUsage(usage) : null
   }
-  const config = await resolveProviderConfig(provider)
-  if (!config) return null
-  if (provider !== "opencode-go" && config.authType !== "oauth2") return null
+  if (provider === "anthropic") {
+    if (!(await getClaudeAccessToken())) return null
+    const value = await fetchClaudeOAuthUsage({ signal })
+    return normalizeClaudeUsage(value)
+  }
+  const rawConfig = getRawProviderConfig(provider)
+  if (!rawConfig) return null
+  if (provider !== "opencode-go" && rawConfig.authType !== "oauth2") return null
 
   let headers: Headers
   let url: string
   if (provider === "opencode-go") {
+    const config = await resolveProviderConfig(provider)
+    if (!config) return null
     url = resolveProviderEndpointUrl(config, "usage")
     headers = new Headers({
       Authorization: `Bearer ${config.apiKey}`,
@@ -417,9 +508,10 @@ export async function getSubscriptionUsage(
     )
     url = `${CODEX_API_BASE_URL}/wham/usage`
   } else {
+    const accessToken = await getXaiAccessToken()
     const credentials = await readXaiCredentials()
-    if (!credentials) return null
-    if (credentials.accessToken !== config.apiKey) {
+    if (!credentials || !accessToken) return null
+    if (credentials.accessToken !== accessToken) {
       throw new Error("Subscription account changed during the usage query")
     }
     const version = await getGrokBuildVersion()
@@ -432,7 +524,7 @@ export async function getSubscriptionUsage(
       : process.arch === "arm64" ? "aarch64"
       : process.arch
     headers = new Headers({
-      Authorization: `Bearer ${config.apiKey}`,
+      Authorization: `Bearer ${accessToken}`,
       "X-XAI-Token-Auth": "xai-grok-cli",
       "x-userid": credentials.accountId,
       "x-grok-client-version": version,

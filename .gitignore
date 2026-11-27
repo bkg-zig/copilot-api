@@ -27,3 +27,7 @@ dist/
 
 # mac
 .DS_Store
+
+# Local BKG deployment credentials
+.secrets/
+legend/
